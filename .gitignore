@@ -1,0 +1,5 @@
+/target
+config.yaml
+*log.txt
+glimbot.db
+src/glimbot/schema.rs
