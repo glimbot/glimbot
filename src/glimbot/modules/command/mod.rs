@@ -1,10 +1,31 @@
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use serenity::prelude::*;
 use serenity::model::prelude::*;
 use thiserror::Error as ThisErr;
 use std::error::Error as StdErr;
 use std::result::Result as StdRes;
+use once_cell::sync::Lazy;
 use std::str::FromStr;
+use crate::glimbot::guilds::GuildContext;
+
+pub mod parser;
+
+static ARG_RE: Lazy<Regex> = Lazy::new(
+    || RegexBuilder::new(r#"
+    ^. # command prefix, single character
+    (?P<cmd>\w+) # command name
+    (
+    \s+
+        (
+            (\w+) # non-escaped stuff
+            | ("((\\") | [^"])*") # escaped string
+        )
+    )*
+    "#)
+        .ignore_whitespace(true)
+        .build()
+        .unwrap()
+);
 
 #[derive(Debug)]
 pub enum Arg {
@@ -48,15 +69,19 @@ pub enum CommanderError {
     InsufficientBotPerms,
     #[error("Glimmy ran into an issue with Discord.\n{0:?}\nT̵i̵m̵e̵ ̵t̵o̵ ̵b̵a̵n̵i̵s̵h̵.")]
     DiscordError(#[from] serenity::Error),
+    #[error("Command parse failure: {0}")]
+    BadCommandParse(String),
     #[error("Invalid parameter at index {0}: expected {1}")]
     BadParameter(usize, ArgType),
     #[error("Incorrect number of parameters. Got {0}")]
     IncorrectNumParams(usize),
+    #[error("Could not parse arguments from {0}")]
+    BadArgString(String),
     #[error("Glimmy's backend is having issues.")]
     Other,
 }
 
-pub type ActionFn = fn(&Commander, &Context, &Message, &[Arg]) -> Result<()>;
+pub type ActionFn = fn(&Commander, &GuildContext, &Context, &Message, &[Arg]) -> Result<()>;
 pub type Result<T> = StdRes<T, CommanderError>;
 
 /// The responsibility for controlling *who* can issue commands exists outside of this module.
@@ -90,9 +115,9 @@ impl Commander {
         }
     }
 
-    pub fn invoke(&self, ctx: &Context, msg: &Message, args: Vec<String>) -> Result<()> {
-        let parsed_args = self.parse_args(&args)?;
-        (self.action)(self, ctx, msg, &parsed_args)
+    pub fn invoke(&self, g: &GuildContext, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
+        let parsed_args = self.parse_args(args.as_ref())?;
+        (self.action)(self, g, ctx, msg, &parsed_args)
     }
 
     pub fn parse_args(&self, args: &[String]) -> Result<Vec<Arg>> {
@@ -154,13 +179,33 @@ impl Commander {
     }
 }
 
+
+
+// impl RawArgs {
+//     pub fn from_command(s: impl AsRef<str>) -> Result<Self> {
+//         let s = s.as_ref();
+//         let captures = ARG_RE.captures(s)
+//             .ok_or(CommanderError::BadArgString(s.to_string()))?;
+//
+//         let args = captures.name("args")
+//     }
+// }
+
 #[cfg(test)]
 mod tests {
-    use crate::glimbot::modules::command::{Commander, Arg};
-    use crate::glimbot::modules::command::ArgType::{UInt, Int, Str};
-    use serenity::prelude::Context;
-    use serenity::model::prelude::Message;
-    use crate::glimbot::modules::command::CommanderError::Other;
-    use once_cell::sync::Lazy;
+    use super::*;
+
+    #[test]
+    fn test_regex() {
+        // Six arguments, command is "ping"
+        let command_str = r#"!ping with arguments 1 2 3 "\"this is an escaped string\"""#;
+        assert!(ARG_RE.is_match(command_str));
+        ARG_RE.captures(command_str).iter().for_each(|x| {
+            x.iter()
+                .filter(|x| x.is_some())
+                .map(|x| x.unwrap())
+                .for_each(|x| println!("{}", x.as_str()))
+        })
+    }
 }
 

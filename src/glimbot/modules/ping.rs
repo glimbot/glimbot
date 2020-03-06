@@ -5,8 +5,9 @@ use serenity::model::prelude::Message;
 use crate::glimbot::modules::command::ArgType::Str;
 use log::{error};
 use crate::glimbot::modules::command::CommanderError::Other;
+use crate::glimbot::guilds::GuildContext;
 
-fn ping(_cmd: &Commander, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn ping(_cmd: &Commander, g: &GuildContext, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
         if args.len() > 0 {
             if let Arg::Str(s) = &args[0] {

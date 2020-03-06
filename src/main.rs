@@ -6,6 +6,7 @@ use serenity::model::prelude::*;
 use serenity::Client;
 use serenity::framework::standard::CommandResult;
 use log::{info, debug};
+use std::path::Path;
 
 mod glimbot;
 
@@ -22,13 +23,15 @@ impl EventHandler for Handler {
         use serenity::model::gateway::Activity;
         info!("Connected to Discord!");
         data_about_bot.guilds.iter().for_each(
-            |g| debug!("{}", g.id().to_guild_cached(&ctx.cache).map_or("<unk>".to_string(), |g| g.read().name.clone()))
+            |g| debug!("Connected to guild: {}", g.id()
+                .to_guild_cached(&ctx.cache)
+                .map_or("<unk>".to_string(), |g| g.read().name.clone()))
         );
         ctx.set_activity(Activity::playing("Cultist Simulator"))
     }
 }
 
-fn init_logging() -> std::result::Result<(), fern::InitError> {
+fn init_logging(cwd: &str) -> std::result::Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, msg, rec| {
             let now = chrono::Local::now();
@@ -53,7 +56,7 @@ fn init_logging() -> std::result::Result<(), fern::InitError> {
                     .write(true)
                     .create(true)
                     .truncate(true)
-                    .open("glimlog.txt")?))
+                    .open(Path::new(cwd).join("glimlog.txt"))?))
         .apply()?;
 
     Ok(())
@@ -70,12 +73,22 @@ fn main() {
             .help("Glimbot config file.")
             .required(true)
             .index(1))
+        .arg(Arg::with_name("working_dir")
+            .short("w")
+            .long("working-dir")
+            .takes_value(true)
+            .value_name("DIR")
+            .help("The directory in which to read/write logs, server configs, database, etc. Will be created if doesn't exist.")
+        )
         .get_matches();
 
     let config = matches.value_of("CONFIG").unwrap();
     let config_file = File::open(config).expect("Glimmy needs her config file.");
 
-    init_logging().unwrap();
+    let wd = matches.value_of("working_dir").unwrap_or("./");
+    std::fs::create_dir_all(wd).expect("Couldn't create working directory.");
+
+    init_logging(wd).unwrap();
     info!("Glimbot version {} coming online.", glimbot::env::VERSION);
 
     let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
