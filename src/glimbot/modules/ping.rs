@@ -6,6 +6,8 @@ use crate::glimbot::modules::command::ArgType::Str;
 use log::{error};
 use crate::glimbot::modules::command::CommanderError::Other;
 use crate::glimbot::guilds::GuildContext;
+use serenity::model::Permissions;
+use crate::glimbot::modules::{Module, ModuleBuilder};
 
 fn ping(_cmd: &Commander, g: &GuildContext, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
@@ -29,13 +31,27 @@ fn ping(_cmd: &Commander, g: &GuildContext, ctx: &Context, msg: &Message, args: 
     }
 }
 
-static PING: Lazy<Commander> = Lazy::new(
-    || Commander::new(
-        "ping",
-        Some("Responds with pong OR echoes the single optional argument."),
-        vec!["echo"],
-        vec![],
-        vec![ArgType::Str],
-        ping
-    )
+static PING: Lazy<Module> = Lazy::new(
+    || ModuleBuilder::new("ping")
+        .with_command(Commander::new(
+            "ping",
+            Some("Responds with pong OR echoes the single optional argument."),
+            vec!["echo"],
+            vec![],
+            vec![ArgType::Str],
+            Permissions::SEND_MESSAGES,
+            ping
+        ))
+        .build()
 );
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_ping_help() {
+
+    }
+}

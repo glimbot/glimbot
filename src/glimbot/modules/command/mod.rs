@@ -7,6 +7,10 @@ use std::result::Result as StdRes;
 use once_cell::sync::Lazy;
 use std::str::FromStr;
 use crate::glimbot::guilds::GuildContext;
+use std::collections::HashSet;
+use serenity::model::permissions::Permissions;
+use std::fmt::Debug;
+
 
 pub mod parser;
 
@@ -85,6 +89,7 @@ pub type ActionFn = fn(&Commander, &GuildContext, &Context, &Message, &[Arg]) ->
 pub type Result<T> = StdRes<T, CommanderError>;
 
 /// The responsibility for controlling *who* can issue commands exists outside of this module.
+#[derive(Clone)]
 pub struct Commander {
     name: String,
     description: Option<String>,
@@ -92,6 +97,19 @@ pub struct Commander {
     args: Vec<ArgType>,
     optional_args: Vec<ArgType>,
     action: ActionFn,
+    required_perms: Permissions
+}
+
+impl std::fmt::Display for Commander {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.help_msg())
+    }
+}
+
+impl Debug for Commander {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
 
 impl Commander {
@@ -100,6 +118,7 @@ impl Commander {
                arg_names: Vec<impl Into<String>>,
                args: Vec<ArgType>,
                optional_args: Vec<ArgType>,
+               required_perms: Permissions,
                action: ActionFn) -> Self {
         if arg_names.len() != args.len() + optional_args.len() {
             panic!("arg_names must have exactly as many elements as the combined lengths of args and optional_args.")
@@ -111,6 +130,7 @@ impl Commander {
             arg_names: arg_names.into_iter().map(Into::into).collect(),
             args,
             optional_args,
+            required_perms,
             action,
         }
     }
@@ -177,19 +197,35 @@ impl Commander {
                 }
         )
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> Option<&String> {
+        self.description.as_ref()
+    }
+
+    pub fn arg_names(&self) -> &[String] {
+        &self.arg_names
+    }
+
+    pub fn required_args(&self) -> &[ArgType] {
+        &self.args
+    }
+
+    pub fn optional_args(&self) -> &[ArgType] {
+        &self.optional_args
+    }
+
+    pub fn permissions(&self) -> Permissions {
+        self.required_perms
+    }
+
+    pub fn action(&self) -> ActionFn {
+        self.action
+    }
 }
-
-
-
-// impl RawArgs {
-//     pub fn from_command(s: impl AsRef<str>) -> Result<Self> {
-//         let s = s.as_ref();
-//         let captures = ARG_RE.captures(s)
-//             .ok_or(CommanderError::BadArgString(s.to_string()))?;
-//
-//         let args = captures.name("args")
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
