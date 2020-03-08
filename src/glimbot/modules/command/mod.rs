@@ -6,7 +6,7 @@ use std::error::Error as StdErr;
 use std::result::Result as StdRes;
 use once_cell::sync::Lazy;
 use std::str::FromStr;
-use crate::glimbot::guilds::GuildContext;
+use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
 use std::collections::HashSet;
 use serenity::model::permissions::Permissions;
 use std::fmt::Debug;
@@ -71,6 +71,8 @@ impl std::fmt::Display for ArgType {
 pub enum CommanderError {
     #[error("Glimmy doesn't have sufficient permissions to perform this action.")]
     InsufficientBotPerms,
+    #[error("Insufficient user permissions for user {0}")]
+    InsufficientUserPerms(UserId),
     #[error("Glimmy ran into an issue with Discord.\n{0:?}\nT̵i̵m̵e̵ ̵t̵o̵ ̵b̵a̵n̵i̵s̵h̵.")]
     DiscordError(#[from] serenity::Error),
     #[error("Command parse failure: {0}")]
@@ -83,9 +85,13 @@ pub enum CommanderError {
     BadArgString(String),
     #[error("Glimmy's backend is having issues.")]
     Other,
+    #[error("Something went wrong: {0}")]
+    OtherError(#[from] Box<dyn std::error::Error>),
+    #[error("")]
+    Silent
 }
 
-pub type ActionFn = fn(&Commander, &GuildContext, &Context, &Message, &[Arg]) -> Result<()>;
+pub type ActionFn = fn(&Commander, &RwGuildPtr, &Context, &Message, &[Arg]) -> Result<()>;
 pub type Result<T> = StdRes<T, CommanderError>;
 
 /// The responsibility for controlling *who* can issue commands exists outside of this module.
@@ -97,7 +103,7 @@ pub struct Commander {
     args: Vec<ArgType>,
     optional_args: Vec<ArgType>,
     action: ActionFn,
-    required_perms: Permissions
+    required_perms: Permissions,
 }
 
 impl std::fmt::Display for Commander {
@@ -135,7 +141,7 @@ impl Commander {
         }
     }
 
-    pub fn invoke(&self, g: &GuildContext, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
+    pub fn invoke(&self, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
         let parsed_args = self.parse_args(args.as_ref())?;
         (self.action)(self, g, ctx, msg, &parsed_args)
     }

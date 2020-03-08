@@ -5,8 +5,11 @@ use serenity::prelude::*;
 use serenity::model::prelude::*;
 use serenity::Client;
 use serenity::framework::standard::CommandResult;
-use log::{info, debug};
+use log::{info, debug, error};
 use std::path::Path;
+use crate::glimbot::GlimDispatch;
+use crate::glimbot::modules::ping::ping_module;
+use log::LevelFilter::Info;
 
 mod glimbot;
 
@@ -31,7 +34,7 @@ impl EventHandler for Handler {
     }
 }
 
-fn init_logging(cwd: &str) -> std::result::Result<(), fern::InitError> {
+fn init_logging(cwd: &str, level: log::LevelFilter) -> std::result::Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, msg, rec| {
             let now = chrono::Local::now();
@@ -46,7 +49,7 @@ fn init_logging(cwd: &str) -> std::result::Result<(), fern::InitError> {
         })
         .chain(fern::Dispatch::new()
             .level(log::LevelFilter::Warn)
-            .level_for("glimbot", log::LevelFilter::Info)
+            .level_for("glimbot", level)
             .chain(std::io::stdout()))
         .chain(fern::Dispatch::new()
             .level(log::LevelFilter::Warn)
@@ -79,7 +82,11 @@ fn main() {
             .takes_value(true)
             .value_name("DIR")
             .help("The directory in which to read/write logs, server configs, database, etc. Will be created if doesn't exist.")
-        )
+        ).arg(Arg::with_name("verbose")
+        .short("v")
+        .multiple(true)
+        .help("Specify multiple times to increase stdout logging level.")
+    )
         .get_matches();
 
     let config = matches.value_of("CONFIG").unwrap();
@@ -88,11 +95,25 @@ fn main() {
     let wd = matches.value_of("working_dir").unwrap_or("./");
     std::fs::create_dir_all(wd).expect("Couldn't create working directory.");
 
-    init_logging(wd).unwrap();
+    let stdout_log_level = match matches.occurrences_of("verbose") {
+        0 => Info,
+        1 => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Trace
+    };
+
+    init_logging(wd, stdout_log_level).unwrap();
     info!("Glimbot version {} coming online.", glimbot::env::VERSION);
 
     let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
-    let mut client = Client::new(conf_map.token(), Handler)
+
+    let mut glim = GlimDispatch::new()
+        .with_module(ping_module());
+
+    if let Err(e) = glim.load_guilds() {
+        error!("Failure while loading guilds: {}", e)
+    }
+
+    let mut client = Client::new(conf_map.token(), glim)
         .expect("Could not connect to Discord. B̵a̵n̵i̵s̵h̵ ̵s̵p̵e̵l̵l̵ ̵i̵n̵e̵f̵f̵e̵c̵t̵i̵v̵e̵.");
 
     client.start_autosharded().expect("Could not start")

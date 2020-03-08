@@ -1,5 +1,3 @@
-
-
 use pest_derive::Parser;
 use pest::Parser;
 use crate::glimbot::modules::command::CommanderError;
@@ -8,7 +6,7 @@ use crate::glimbot::modules::command::CommanderError;
 pub struct RawCmd {
     pub prefix: String,
     pub command: String,
-    pub args: Vec<String>
+    pub args: Vec<String>,
 }
 
 #[derive(Parser)]
@@ -40,7 +38,7 @@ pub fn parse_command(s: impl AsRef<str>) -> super::Result<RawCmd> {
         };
     };
 
-    Ok(RawCmd {prefix: prefix.to_string(), command: command.to_string(), args})
+    Ok(RawCmd { prefix: prefix.to_string(), command: command.to_string(), args })
 }
 
 #[cfg(test)]

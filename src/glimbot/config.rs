@@ -1,5 +1,3 @@
-
-
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,5 +24,4 @@ mod tests {
         let serialized = serde_yaml::to_string(&c).unwrap();
         println!("{}", serialized)
     }
-
 }

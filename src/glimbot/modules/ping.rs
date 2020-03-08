@@ -1,15 +1,15 @@
 use crate::glimbot::modules::command::*;
 use once_cell::sync::Lazy;
-use serenity::prelude::{Context};
+use serenity::prelude::Context;
 use serenity::model::prelude::Message;
 use crate::glimbot::modules::command::ArgType::Str;
-use log::{error};
-use crate::glimbot::modules::command::CommanderError::Other;
-use crate::glimbot::guilds::GuildContext;
+use log::error;
+use crate::glimbot::modules::command::CommanderError::{Other, OtherError};
+use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
 use serenity::model::Permissions;
 use crate::glimbot::modules::{Module, ModuleBuilder};
 
-fn ping(_cmd: &Commander, g: &GuildContext, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn ping(_cmd: &Commander, _g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
         if args.len() > 0 {
             if let Arg::Str(s) = &args[0] {
@@ -25,14 +25,14 @@ fn ping(_cmd: &Commander, g: &GuildContext, ctx: &Context, msg: &Message, args: 
 
     if let Err(e) = res {
         error!("{:?}", e);
-        Err(Other)
+        Err(OtherError(Box::new(e)))
     } else {
         Ok(())
     }
 }
 
-static PING: Lazy<Module> = Lazy::new(
-    || ModuleBuilder::new("ping")
+pub fn ping_module() -> Module {
+    ModuleBuilder::new("ping")
         .with_command(Commander::new(
             "ping",
             Some("Responds with pong OR echoes the single optional argument."),
@@ -40,10 +40,10 @@ static PING: Lazy<Module> = Lazy::new(
             vec![],
             vec![ArgType::Str],
             Permissions::SEND_MESSAGES,
-            ping
+            ping,
         ))
         .build()
-);
+}
 
 
 #[cfg(test)]
@@ -51,7 +51,5 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_ping_help() {
-
-    }
+    fn check_ping_help() {}
 }
