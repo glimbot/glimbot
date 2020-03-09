@@ -1,47 +1,31 @@
-use clap::{App, Arg};
 use std::fs::File;
-use crate::glimbot::config::Config;
-use serenity::prelude::*;
-use serenity::model::prelude::*;
+use std::path::Path;
+
+use clap::{App, Arg};
+use log::{debug, error, info};
+use log::LevelFilter::Info;
 use serenity::Client;
 use serenity::framework::standard::CommandResult;
-use log::{info, debug, error};
-use std::path::Path;
+use serenity::model::prelude::*;
+use serenity::prelude::*;
+use std::thread;
+use crate::glimbot::config::Config;
 use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::ping::ping_module;
-use log::LevelFilter::Info;
+use crate::glimbot::modules::help::help_module;
+use crate::glimbot::modules::bag::bag_module;
 
 mod glimbot;
-
-struct Handler;
-
-impl EventHandler for Handler {
-    fn message(&self, ctx: Context, new_message: Message) {
-        if new_message.content == "!ping" {
-            let _ = new_message.channel_id.say(&ctx, "Pong!");
-        }
-    }
-
-    fn ready(&self, ctx: Context, data_about_bot: Ready) {
-        use serenity::model::gateway::Activity;
-        info!("Connected to Discord!");
-        data_about_bot.guilds.iter().for_each(
-            |g| debug!("Connected to guild: {}", g.id()
-                .to_guild_cached(&ctx.cache)
-                .map_or("<unk>".to_string(), |g| g.read().name.clone()))
-        );
-        ctx.set_activity(Activity::playing("Cultist Simulator"))
-    }
-}
 
 fn init_logging(cwd: &str, level: log::LevelFilter) -> std::result::Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, msg, rec| {
             let now = chrono::Local::now();
             out.finish(format_args!(
-                "[{}.{:03}][{}][{}] {}",
+                "[{}.{:03}][{:?}][{}][{}] {}",
                 now.timestamp(),
                 now.timestamp_subsec_millis(),
+                thread::current().id(),
                 rec.level(),
                 rec.module_path().unwrap_or("<unk>"),
                 msg
@@ -64,6 +48,7 @@ fn init_logging(cwd: &str, level: log::LevelFilter) -> std::result::Result<(), f
 
     Ok(())
 }
+
 
 fn main() {
     better_panic::install();
@@ -107,7 +92,9 @@ fn main() {
     let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
 
     let mut glim = GlimDispatch::new()
-        .with_module(ping_module());
+        .with_module(ping_module())
+        .with_module(help_module())
+        .with_module(bag_module());
 
     if let Err(e) = glim.load_guilds() {
         error!("Failure while loading guilds: {}", e)

@@ -1,16 +1,19 @@
-use regex::{Regex, RegexBuilder};
-use serenity::prelude::*;
-use serenity::model::prelude::*;
-use thiserror::Error as ThisErr;
-use std::error::Error as StdErr;
-use std::result::Result as StdRes;
-use once_cell::sync::Lazy;
-use std::str::FromStr;
-use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
 use std::collections::HashSet;
-use serenity::model::permissions::Permissions;
+use std::error::Error as StdErr;
 use std::fmt::Debug;
+use std::result::Result as StdRes;
+use std::str::FromStr;
 
+use once_cell::sync::Lazy;
+use regex::{Regex, RegexBuilder};
+use serenity::model::permissions::Permissions;
+use serenity::model::prelude::*;
+use serenity::prelude::*;
+use thiserror::Error as ThisErr;
+
+use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
+use crate::glimbot::GlimDispatch;
+use crate::glimbot::util::FromError;
 
 pub mod parser;
 
@@ -31,7 +34,7 @@ static ARG_RE: Lazy<Regex> = Lazy::new(
         .unwrap()
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Arg {
     UInt(u64),
     Int(i64),
@@ -44,6 +47,33 @@ impl std::fmt::Display for Arg {
             Arg::UInt(u) => write!(f, "{}", u),
             Arg::Int(i) => write!(f, "{}", i),
             Arg::Str(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl From<Arg> for u64 {
+    fn from(a: Arg) -> Self {
+        match a {
+            Arg::UInt(v) => {v},
+            _ => panic!("Can't parse {:?} as uint", a)
+        }
+    }
+}
+
+impl From<Arg> for i64 {
+    fn from(a: Arg) -> Self {
+        match a {
+            Arg::Int(v) => {v},
+            _ => panic!("Can't parse {:?} as uint", a)
+        }
+    }
+}
+
+impl From<Arg> for String {
+    fn from(a: Arg) -> Self {
+        match a {
+            Arg::Str(v) => {v},
+            _ => panic!("Can't parse {:?} as uint", a)
         }
     }
 }
@@ -73,6 +103,8 @@ pub enum CommanderError {
     InsufficientBotPerms,
     #[error("Insufficient user permissions for user {0}")]
     InsufficientUserPerms(UserId),
+    #[error("Error: {0}")]
+    RuntimeError(String),
     #[error("Glimmy ran into an issue with Discord.\n{0:?}\nT̵i̵m̵e̵ ̵t̵o̵ ̵b̵a̵n̵i̵s̵h̵.")]
     DiscordError(#[from] serenity::Error),
     #[error("Command parse failure: {0}")]
@@ -91,7 +123,13 @@ pub enum CommanderError {
     Silent
 }
 
-pub type ActionFn = fn(&Commander, &RwGuildPtr, &Context, &Message, &[Arg]) -> Result<()>;
+impl FromError for CommanderError {
+    fn from_error(e: impl StdErr + 'static) -> Self {
+        CommanderError::OtherError(Box::new(e))
+    }
+}
+
+pub type ActionFn = fn(&GlimDispatch, &Commander, &RwGuildPtr, &Context, &Message, &[Arg]) -> Result<()>;
 pub type Result<T> = StdRes<T, CommanderError>;
 
 /// The responsibility for controlling *who* can issue commands exists outside of this module.
@@ -141,9 +179,9 @@ impl Commander {
         }
     }
 
-    pub fn invoke(&self, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
+    pub fn invoke(&self, dispatch: &GlimDispatch, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
         let parsed_args = self.parse_args(args.as_ref())?;
-        (self.action)(self, g, ctx, msg, &parsed_args)
+        (self.action)(dispatch, self, g, ctx, msg, &parsed_args)
     }
 
     pub fn parse_args(&self, args: &[String]) -> Result<Vec<Arg>> {

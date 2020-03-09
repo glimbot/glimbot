@@ -1,21 +1,28 @@
-use crate::glimbot::modules::command::Commander;
-use std::collections::{HashMap, HashSet, BTreeMap};
-use serenity::model::permissions::Permissions;
-use std::sync::Arc;
-
-pub mod command;
-pub mod ping;
-
-use serde::{Deserialize, Serialize, Serializer};
 use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt::Display;
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize, Serializer};
 use serde::export::Formatter;
+use serenity::model::permissions::Permissions;
 use serenity::model::prelude::EventType;
+
 use crate::glimbot::EventHandler;
+use crate::glimbot::modules::command::Commander;
+use parking_lot::RwLock;
+use std::collections::hash_map::RandomState;
+use serde_yaml::Value;
+
+pub mod command;
+pub mod ping;
+pub mod help;
+pub mod bag;
 
 pub type ModuleConfig = HashMap<String, serde_yaml::Value>;
+pub type RwModuleConfigPtr = Arc<RwLock<ModuleConfig>>;
 
 pub type ConfigFn = fn() -> ModuleConfig;
 
@@ -43,6 +50,10 @@ impl Module {
 
     pub fn default_config(&self) -> ModuleConfig {
         (self.create_config)()
+    }
+
+    pub fn wrapped_default_config(&self) -> RwModuleConfigPtr {
+        RwModuleConfigPtr::new(RwLock::new(self.default_config()))
     }
 
     pub fn required_perms(&self) -> Permissions {

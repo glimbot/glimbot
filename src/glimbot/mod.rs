@@ -1,28 +1,31 @@
-use std::collections::{HashSet, HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::error::Error as StdError;
+use std::io::Write;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use serenity::model::event::{EventType, Event, MessageUpdateEvent};
-use crate::glimbot::modules::Module;
-use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
-use serenity::model::prelude::{Message, GuildId};
-use serenity::prelude::{Context, EventHandler as EHandler};
-use thiserror::Error;
 use std::rc::Rc;
+use std::result::Result as StdResult;
 use std::sync::Arc;
+
+use log::{debug, error, info, trace};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::result::Result as StdResult;
-use std::error::Error as StdError;
-use std::ops::Deref;
-use std::io::Write;
+use parking_lot::RwLockUpgradableReadGuard;
 use regex::Regex;
-use crate::glimbot::util::FromError;
-use log::{info, debug, error, trace};
+use serenity::http::CacheHttp;
+use serenity::model::event::{Event, EventType, MessageUpdateEvent};
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, MessageId};
-use parking_lot::RwLockUpgradableReadGuard;
-use serenity::http::CacheHttp;
-use crate::glimbot::modules::command::CommanderError;
+use serenity::model::prelude::{GuildId, Message};
+use serenity::prelude::{Context, EventHandler as EHandler};
+use thiserror::Error;
+
+use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
+use crate::glimbot::modules::command::{CommanderError, Commander};
 use crate::glimbot::modules::command::parser::RawCmd;
+use crate::glimbot::modules::{Module, RwModuleConfigPtr};
+use crate::glimbot::util::FromError;
+use serenity::utils::MessageBuilder;
 
 pub mod env;
 pub mod config;
@@ -68,7 +71,7 @@ pub struct GlimDispatch {
     modules: HashMap<String, Module>,
     hooks: BTreeMap<EventType, Vec<EventHandler>>,
     guilds: RwLock<HashMap<GuildId, RwGuildPtr>>,
-    command_map: HashMap<String, String>
+    command_map: HashMap<String, String>,
 }
 
 static GUILD_PATH_RE: Lazy<Regex> = Lazy::new(
@@ -99,7 +102,7 @@ impl GlimDispatch {
             modules: HashMap::new(),
             hooks: BTreeMap::new(),
             guilds: RwLock::new(HashMap::new()),
-            command_map: HashMap::new()
+            command_map: HashMap::new(),
         }
     }
 
@@ -109,7 +112,7 @@ impl GlimDispatch {
                 let entry = self.hooks.entry(ev.clone()).or_default();
                 entry.push(handler.clone())
             });
-        module.commands().keys().for_each(|x| {self.command_map.insert(x.clone(), module.name().to_string());});
+        module.commands().keys().for_each(|x| { self.command_map.insert(x.clone(), module.name().to_string()); });
         info!("Loaded module {}", module.name());
         self.modules.insert(module.name().to_string(), module);
         self
@@ -171,7 +174,7 @@ impl GlimDispatch {
             info!("Encountered new guild {}", g);
             let mut lock = RwLockUpgradableReadGuard::upgrade(read_gs);
             let out = RwGuildPtr::from(GuildContext::new(g));
-            out.deref().read().commit_to_disk();
+            out.deref().write().commit_to_disk();
             lock.insert(g, out.clone());
             out
         } else {
@@ -180,6 +183,28 @@ impl GlimDispatch {
 
         out
     }
+
+    pub fn ensure_module_config(&self, g: GuildId, module: impl AsRef<str>) -> RwModuleConfigPtr {
+        let module = module.as_ref();
+        let rgptr = self.encounter_guild(g);
+        let rug = rgptr.upgradable_read();
+        if !rug.module_configs.contains_key(module) {
+            let mut wrg = RwLockUpgradableReadGuard::upgrade(rug);
+            let out = self.modules.get(module).unwrap().wrapped_default_config();
+            wrg.module_configs.insert(module.to_owned(), out.clone());
+            wrg.commit_to_disk();
+            out
+        } else {
+            rug.module_configs.get(module).unwrap().clone()
+        }
+    }
+
+    pub fn resolve_command(&self, s: impl AsRef<str>) -> Option<&Commander> {
+        let s = s.as_ref();
+        self.command_map.get(s)
+            .and_then(|s| self.modules.get(s))
+            .and_then(|m| m.commands().get(s))
+    }
 }
 
 impl EHandler for GlimDispatch {
@@ -187,7 +212,9 @@ impl EHandler for GlimDispatch {
         if new_message.is_own(&ctx) {
             trace!("Saw a message from myself.");
             return;
-        }
+        } else {
+            trace!("Saw a message from {}", new_message.author.id);
+        };
         if let Some(gid) = new_message.guild_id {
             let gc = self.encounter_guild(gid);
             if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
@@ -202,11 +229,9 @@ impl EHandler for GlimDispatch {
                     };
 
                     if stop {
-                        return
+                        return;
                     }
                 };
-
-
             }
 
             let mut pref = gc.read().command_prefix.clone();
@@ -225,9 +250,9 @@ impl EHandler for GlimDispatch {
                                 unreachable!()
                             }
                         })
-                    } else {
-                        Ok(new_message.content.clone())
-                    };
+                } else {
+                    Ok(new_message.content.clone())
+                };
 
                 let raw_cmd = cmd.and_then(
                     |s| modules::command::parser::parse_command(s)
@@ -236,19 +261,20 @@ impl EHandler for GlimDispatch {
                 match raw_cmd.and_then(|r| {
                     let module = self.command_map.get(&r.command);
                     if let Some(name) = module {
-                        let m = self.modules.get(name).unwrap();
-                        let c = m.commands().get(&r.command).unwrap();
-                        c.invoke(&gc, &ctx, &new_message, &r.args)
+                        let c = self.resolve_command(&r.command).unwrap();
+                        c.invoke(self, &gc, &ctx, &new_message, &r.args)
                     } else {
                         debug!("Got invalid command in channel {}: {}", new_message.channel_id, &r.command);
-                        new_message.channel_id.say(&ctx, "No such command.")
+                        new_message.channel_id.say(&ctx, "```No such command.```")
                             .map(|x| {})
                             .map_err(|_| CommanderError::Silent)
                     }
                 }) {
-                    Err(CommanderError::Silent) => {},
+                    Err(CommanderError::Silent) => {}
                     Err(e) => {
-                        if let Err(err) = new_message.channel_id.say(&ctx, e) {
+                        if let Err(err) = new_message.channel_id.say(&ctx, MessageBuilder::new()
+                            .push_codeblock_safe(e, None)
+                            .build()) {
                             debug!("Command failed: {}", err);
                         }
                     }

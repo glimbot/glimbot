@@ -6,7 +6,7 @@
 
 WHITESPACE = _{" " | "\t" | "\r" | "\n"}
 num = @{ASCII_DIGIT+}
-cmd = @{ALPHABETIC+}
+cmd = @{(ALPHABETIC|"_")+}
 
 raw_str = @{(!(SEPARATOR | "\"") ~ ANY)+}
 escaped_str = @{

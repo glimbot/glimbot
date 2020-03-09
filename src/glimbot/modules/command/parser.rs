@@ -1,5 +1,6 @@
-use pest_derive::Parser;
 use pest::Parser;
+use pest_derive::Parser;
+
 use crate::glimbot::modules::command::CommanderError;
 
 #[derive(Debug)]
