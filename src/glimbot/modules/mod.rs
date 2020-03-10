@@ -15,13 +15,19 @@ use crate::glimbot::modules::command::Commander;
 use parking_lot::RwLock;
 use std::collections::hash_map::RandomState;
 use serde_yaml::Value;
+use crate::glimbot::modules::bag::BagConfig;
 
 pub mod command;
 pub mod ping;
 pub mod help;
 pub mod bag;
 
-pub type ModuleConfig = HashMap<String, serde_yaml::Value>;
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ModuleConfig {
+    Bag(BagConfig),
+    None
+}
+
 pub type RwModuleConfigPtr = Arc<RwLock<ModuleConfig>>;
 
 pub type ConfigFn = fn() -> ModuleConfig;
@@ -67,7 +73,7 @@ pub struct ModuleBuilder {
 }
 
 pub fn default_config() -> ModuleConfig {
-    ModuleConfig::new()
+    ModuleConfig::None
 }
 
 impl ModuleBuilder {

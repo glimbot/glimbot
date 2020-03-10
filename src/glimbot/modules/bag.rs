@@ -7,19 +7,88 @@ use serenity::prelude::Context;
 use serenity::model::prelude::Message;
 use super::command::Result;
 use serenity::model::Permissions;
+use thiserror::Error as ThisErr;
 use serenity::utils::{content_safe, ContentSafeOptions, MessageBuilder};
 use crate::glimbot::modules::command::CommanderError::{RuntimeError, Silent};
 use crate::glimbot::util::{FromError, say_codeblock};
 use parking_lot::RwLockUpgradableReadGuard;
 use rand::prelude::*;
+use std::result::Result as StdRes;
+use serde::{Deserialize, Serialize};
 
 const BAG_MAX_ITEMS: usize = 10;
 const BAG_ITEM_MAX_SIZE: usize = 50;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BagConfig {
+    bag: Vec<String>,
+    capacity: usize,
+}
+
+impl AsRef<BagConfig> for ModuleConfig {
+    fn as_ref(&self) -> &BagConfig {
+        match self {
+            ModuleConfig::Bag(b) => { b }
+            e => panic!("Got {:?}, expected Bag", e)
+        }
+    }
+}
+
+impl AsMut<BagConfig> for ModuleConfig {
+    fn as_mut(&mut self) -> &mut BagConfig {
+        match self {
+            ModuleConfig::Bag(b) => { b }
+            e => panic!("Got {:?}, expected Bag", e)
+        }
+    }
+}
+
+#[derive(ThisErr, Debug, Clone)]
+pub enum BagError {
+    #[error("The bag is full. It can only hold {0} items.")]
+    BagFull(usize),
+    #[error("The bag is empty.")]
+    BagEmpty,
+}
+
+impl BagConfig {
+    pub fn new() -> BagConfig {
+        BagConfig {
+            bag: Vec::new(),
+            capacity: BAG_MAX_ITEMS,
+        }
+    }
+
+    pub fn add_item(&mut self, val: impl Into<String>) -> StdRes<(), BagError> {
+        if self.capacity > self.bag.len() {
+            self.bag.push(val.into());
+            Ok(())
+        } else {
+            Err(BagError::BagFull(self.capacity))
+        }
+    }
+
+    pub fn remove_item_rand(&mut self) -> StdRes<String, BagError> {
+        if self.bag.is_empty() {
+            Err(BagError::BagEmpty)
+        } else {
+            let mut rng = rand::thread_rng();
+            let idx = rng.gen_range(0, self.bag.len());
+            Ok(self.bag.remove(idx))
+        }
+    }
+
+    pub fn item_can_be_added(&self) -> bool {
+        self.bag.len() < self.capacity
+    }
+
+    pub fn items(&self) -> &[String] {
+        &self.bag
+    }
+}
+
 pub fn bag_module_config() -> ModuleConfig {
-    let mut out = ModuleConfig::new();
-    out.insert("bag".to_string(), Value::Sequence(Sequence::new()));
-    out
+    ModuleConfig::Bag(BagConfig::new())
 }
 
 fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
@@ -36,22 +105,18 @@ fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: &RwGuildPtr, ctx: &Context,
     };
 
 
-    let rug = mod_config.upgradable_read();
-    let changed = if rug.get("bag").unwrap().as_sequence().unwrap().len() < BAG_MAX_ITEMS {
-        let mut wrg = RwLockUpgradableReadGuard::upgrade(rug);
-        let seq = wrg.get_mut("bag").unwrap().as_sequence_mut().unwrap();
-        seq.push(Value::from(cleaned_item));
-        say_codeblock(&ctx, msg.channel_id, "Added item to bag.").map_err(|_e| Silent)?;
-        true
-    } else {
-        say_codeblock(&ctx, msg.channel_id, "Bag is too full!")
-            .map_err(|_e| Silent)?;
-        false
+    let res = {
+        let mut guard = mod_config.write();
+        let bag: &mut BagConfig = guard.as_mut();
+        bag.add_item(cleaned_item)
     };
 
-    if changed {
+    if let Err(e) = res {
+        say_codeblock(ctx, msg.channel_id, e).map_err(|_| Silent)?;
+    } else {
+        say_codeblock(ctx, msg.channel_id, "Added item to bag.").map_err(|_| Silent)?;
         g.write().commit_to_disk();
-    };
+    }
 
     Ok(())
 }
@@ -62,13 +127,11 @@ fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: &RwGuildPtr, ctx: &Context,
         disp.ensure_module_config(gid, "bag")
     };
 
-    let rug = mod_config.read();
-    let contents = rug.get("bag").unwrap().as_sequence().unwrap();
-    let local: Vec<String> = contents.iter().map(Value::as_str)
-        .map(Option::unwrap)
-        .map(String::from)
-        .collect();
-    std::mem::drop(rug);
+    let local: Vec<_> = {
+        let rug = mod_config.read();
+        let bag: &BagConfig = rug.as_ref();
+        bag.items().iter().cloned().collect()
+    };
 
     let message = if local.len() > 0 {
         MessageBuilder::new()
@@ -89,26 +152,23 @@ fn bag_yeet(disp: &GlimDispatch, cmd: &Commander, g: &RwGuildPtr, ctx: &Context,
         disp.ensure_module_config(gid, "bag")
     };
 
-    let rug = mod_config.upgradable_read();
-    let changed = if !rug.get("bag").unwrap().as_sequence().unwrap().is_empty() {
-        let mut wrg = RwLockUpgradableReadGuard::upgrade(rug);
-        let seq = wrg.get_mut("bag").unwrap().as_sequence_mut().unwrap();
-        let mut rng = rand::thread_rng();
-        let idx = rng.gen_range(0, seq.len());
-        let item = seq.remove(idx);
-        say_codeblock(&ctx, msg.channel_id,
-                      format!("Yeeted a(n) {}", item.as_str().unwrap()))
-            .map_err(|_e| Silent)?;
-        true
-    } else {
-        say_codeblock(&ctx, msg.channel_id, "The bag is empty.")
-            .map_err(|_e| Silent)?;
-        false
+    let res = {
+        let mut guard = mod_config.write();
+        let bag: &mut BagConfig = guard.as_mut();
+        bag.remove_item_rand()
+    };
+
+    let changed = res.is_ok();
+    let message = match res {
+        Ok(s) => {s},
+        Err(e) => {format!("{}", e)},
     };
 
     if changed {
         g.write().commit_to_disk();
     };
+
+    say_codeblock(ctx, msg.channel_id, message).map_err(|_| Silent)?;
     Ok(())
 }
 
