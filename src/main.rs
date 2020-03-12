@@ -1,5 +1,13 @@
+#![forbid(unsafe_code)]
+#![allow(dead_code)]
+
+#[macro_use] extern crate diesel;
+#[macro_use] extern crate log;
+#[macro_use] extern crate pest_derive;
+
 use std::fs::File;
 use std::path::Path;
+use std::thread;
 
 use clap::{App, Arg};
 use log::{debug, error, info};
@@ -8,12 +16,12 @@ use serenity::Client;
 use serenity::framework::standard::CommandResult;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use std::thread;
+
 use crate::glimbot::config::Config;
 use crate::glimbot::GlimDispatch;
-use crate::glimbot::modules::ping::ping_module;
-use crate::glimbot::modules::help::help_module;
 use crate::glimbot::modules::bag::bag_module;
+use crate::glimbot::modules::help::help_module;
+use crate::glimbot::modules::ping::ping_module;
 
 mod glimbot;
 
@@ -95,10 +103,6 @@ fn main() {
         .with_module(ping_module())
         .with_module(help_module())
         .with_module(bag_module());
-
-    if let Err(e) = glim.load_guilds() {
-        error!("Failure while loading guilds: {}", e)
-    }
 
     let mut client = Client::new(conf_map.token(), glim)
         .expect("Could not connect to Discord. B̵a̵n̵i̵s̵h̵ ̵s̵p̵e̵l̵l̵ ̵i̵n̵e̵f̵f̵e̵c̵t̵i̵v̵e̵.");

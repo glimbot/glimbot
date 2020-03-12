@@ -7,9 +7,10 @@ use std::rc::Rc;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
+use diesel::{ExpressionMethods, insert_or_ignore_into, RunQueryDsl, SqliteConnection};
 use log::{debug, error, info, trace};
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use parking_lot::RwLockUpgradableReadGuard;
 use regex::Regex;
 use serenity::http::CacheHttp;
@@ -18,25 +19,27 @@ use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, MessageId};
 use serenity::model::prelude::{GuildId, Message};
 use serenity::prelude::{Context, EventHandler as EHandler};
+use serenity::utils::MessageBuilder;
 use thiserror::Error;
 
-use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
-use crate::glimbot::modules::command::{CommanderError, Commander};
+use crate::diesel::QueryDsl;
+use crate::glimbot::db::{Conn, DBPool, Guild, pooled_connection};
+use crate::glimbot::modules::Module;
+use crate::glimbot::modules::command::{Commander, CommanderError};
 use crate::glimbot::modules::command::parser::RawCmd;
-use crate::glimbot::modules::{Module, RwModuleConfigPtr};
 use crate::glimbot::util::FromError;
-use serenity::utils::MessageBuilder;
 
 pub mod env;
 pub mod config;
 pub mod modules;
-pub mod guilds;
 pub mod util;
+pub mod db;
+pub(crate) mod schema;
 
 
-pub type EventHandlerFn = fn(&Context, &RwGuildPtr, &Event) -> bool;
-pub type MessageHandlerFn = fn(&Context, &RwGuildPtr, &Message) -> bool;
-pub type CommandHandlerFn = fn(&Context, &RwGuildPtr, &Message, String) -> modules::command::Result<String>;
+pub type EventHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Event) -> bool;
+pub type MessageHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Message) -> bool;
+pub type CommandHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Message, String) -> modules::command::Result<String>;
 
 #[derive(Clone)]
 pub enum EventHandler {
@@ -70,38 +73,22 @@ pub struct GlimDispatch {
     working_directory: PathBuf,
     modules: HashMap<String, Module>,
     hooks: BTreeMap<EventType, Vec<EventHandler>>,
-    guilds: RwLock<HashMap<GuildId, RwGuildPtr>>,
     command_map: HashMap<String, String>,
-}
-
-static GUILD_PATH_RE: Lazy<Regex> = Lazy::new(
-    || Regex::new(r#"^(\d+)_conf.yaml"#).unwrap()
-);
-
-fn file_is_guild(p: impl AsRef<Path>) -> bool {
-    p.as_ref().file_name().map_or(
-        false,
-        |s| GUILD_PATH_RE.is_match(s.to_string_lossy().as_ref()),
-    )
-}
-
-fn load_guild_config(p: impl AsRef<Path>) -> GlimResult<GuildContext> {
-    let mut f = std::fs::OpenOptions::new()
-        .read(true)
-        .open(p)
-        .map_err(InternalError::from_error)?;
-
-    let o: GuildContext = serde_yaml::from_reader(f).map_err(InternalError::from_error)?;
-    Ok(o)
+    db_conn: DBPool,
+    wr_conn: Arc<Mutex<Conn>>,
 }
 
 impl GlimDispatch {
     pub fn new() -> Self {
+        let pool = pooled_connection("./glimbot.db");
+        let c = pool.get().unwrap();
+
         GlimDispatch {
             working_directory: PathBuf::from(".".to_string()),
             modules: HashMap::new(),
             hooks: BTreeMap::new(),
-            guilds: RwLock::new(HashMap::new()),
+            db_conn: pool,
+            wr_conn: Arc::new(Mutex::new(c)),
             command_map: HashMap::new(),
         }
     }
@@ -118,85 +105,29 @@ impl GlimDispatch {
         self
     }
 
-    pub fn load_guilds(&mut self) -> GlimResult<()> {
-        let p = self.working_directory.clone();
-        let v: Vec<_> = std::fs::read_dir(p).map_err(InternalError::from_error)?
-            .map(|p| {
-                if let Ok(d) = &p {
-                    d.path()
-                } else {
-                    PathBuf::from("")
-                }
-            })
-            .filter(|p| file_is_guild(p))
-            .map(|p| load_guild_config(p))
-            .collect();
-
-        v.iter().filter(|e| e.is_err())
-            .map(|e| e.as_ref().unwrap_err())
-            .for_each(|e| error!("Couldn't load guild from {:?}", e));
-
-        v.into_iter().filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
-            .for_each(
-                |g| {
-                    self.guilds.write().insert(g.guild, RwGuildPtr::from(g));
-                }
-            );
-
-        Ok(())
-    }
-
-    pub fn write_guilds(&mut self) -> GlimResult<()> {
-        for g in self.guilds.read().values() {
-            let rg = g.read();
-            let dest_file = format!("{}_conf.yaml", rg.guild.to_string());
-            let dest_path = self.working_directory.join(dest_file);
-            let mut f = std::fs::OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .open(dest_path)
-                .map_err(InternalError::from_error)?;
-
-            serde_yaml::to_writer(&f, rg.deref())
-                .map_err(InternalError::from_error)?;
-            f.flush().map_err(InternalError::from_error)?;
-        }
-
-        Ok(())
-    }
-
     // Checks to see if we've met this guild before; if not it creates a default config for it.
     // In either case, returns a guild context associated with this id
-    pub fn encounter_guild(&self, g: GuildId) -> RwGuildPtr {
-        let read_gs = self.guilds.upgradable_read();
-        let out = if !read_gs.contains_key(&g) {
-            info!("Encountered new guild {}", g);
-            let mut lock = RwLockUpgradableReadGuard::upgrade(read_gs);
-            let out = RwGuildPtr::from(GuildContext::new(g));
-            out.deref().write().commit_to_disk();
-            lock.insert(g, out.clone());
-            out
-        } else {
-            read_gs.get(&g).unwrap().clone()
-        };
+    pub fn encounter_guild(&self, g: GuildId) {
+        use schema::guilds::dsl::*;
+        let new = insert_or_ignore_into(guilds)
+            .values(id.eq(g.0 as i64))
+            .execute(self.wr_conn().lock().as_ref()).unwrap();
 
-        out
+        if new > 0 {
+            info!("Encountered new guild {}", g)
+        }
     }
 
-    pub fn ensure_module_config(&self, g: GuildId, module: impl AsRef<str>) -> RwModuleConfigPtr {
+    pub fn rd_conn(&self) -> Conn {
+        self.db_conn.get().expect("Couldn't connect to database!")
+    }
+    pub fn wr_conn(&self) -> &Mutex<Conn> { self.wr_conn.as_ref() }
+
+    pub fn ensure_module_config(&self, g: GuildId, module: impl AsRef<str>) {
         let module = module.as_ref();
-        let rgptr = self.encounter_guild(g);
-        let rug = rgptr.upgradable_read();
-        if !rug.module_configs.contains_key(module) {
-            let mut wrg = RwLockUpgradableReadGuard::upgrade(rug);
-            let out = self.modules.get(module).unwrap().wrapped_default_config();
-            wrg.module_configs.insert(module.to_owned(), out.clone());
-            wrg.commit_to_disk();
-            out
-        } else {
-            rug.module_configs.get(module).unwrap().clone()
-        }
+        let mod_info = self.modules.get(module).unwrap();
+        self.encounter_guild(g);
+        mod_info.write_default_config(self, g)
     }
 
     pub fn resolve_command(&self, s: impl AsRef<str>) -> Option<&Commander> {
@@ -209,6 +140,8 @@ impl GlimDispatch {
 
 impl EHandler for GlimDispatch {
     fn message(&self, ctx: Context, new_message: Message) {
+        use schema::guilds::dsl::*;
+
         if new_message.is_own(&ctx) {
             trace!("Saw a message from myself.");
             return;
@@ -216,13 +149,13 @@ impl EHandler for GlimDispatch {
             trace!("Saw a message from {}", new_message.author.id);
         };
         if let Some(gid) = new_message.guild_id {
-            let gc = self.encounter_guild(gid);
+            self.encounter_guild(gid);
             if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
                 let mut stop = false;
                 for hook in v {
                     match hook {
                         EventHandler::MessageHandler(m) => {
-                            stop = m(&ctx, &gc, &new_message);
+                            stop = m(self, gid, &ctx, &new_message);
                         }
                         EventHandler::CommandHandler(_) => (),
                         _ => unreachable!()
@@ -234,8 +167,8 @@ impl EHandler for GlimDispatch {
                 };
             }
 
-            let mut pref = gc.read().command_prefix.clone();
-            if new_message.content.starts_with(&pref) {
+            let pref: Vec<String> = guilds.select(command_prefix).filter(id.eq(gid.0 as i64)).load(&self.rd_conn()).unwrap();
+            if new_message.content.starts_with(&pref[0]) {
                 // This may be a command
                 let cmd: modules::command::Result<String> = if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
                     v.iter()
@@ -245,7 +178,7 @@ impl EHandler for GlimDispatch {
                         })
                         .try_fold(new_message.content.clone(), |s, h| {
                             if let EventHandler::CommandHandler(c) = h {
-                                c(&ctx, &gc, &new_message, s)
+                                c(self, gid, &ctx, &new_message, s)
                             } else {
                                 unreachable!()
                             }
@@ -262,7 +195,7 @@ impl EHandler for GlimDispatch {
                     let module = self.command_map.get(&r.command);
                     if let Some(name) = module {
                         let c = self.resolve_command(&r.command).unwrap();
-                        c.invoke(self, &gc, &ctx, &new_message, &r.args)
+                        c.invoke(self, gid, &ctx, &new_message, &r.args)
                     } else {
                         debug!("Got invalid command in channel {}: {}", new_message.channel_id, &r.command);
                         new_message.channel_id.say(&ctx, "```No such command.```")

@@ -1,99 +1,52 @@
 CREATE TABLE guilds
 (
-    id   bigint not null primary key,
-    name text   not null
+    id             bigint not null primary key,
+    command_prefix text   not null default '!'
 );
 
-CREATE TABLE guild_owners
+CREATE TABLE incrementers
 (
-    id         bigint    not null primary key,
-    guild_id   bigint    not null,
-    when_added timestamp not null default current_timestamp,
-    FOREIGN KEY (guild_id)
-        REFERENCES guilds (id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
+    guild_id bigint not null,
+    name     text   not null,
+    count    bigint not null default 0,
+    primary key (guild_id, name),
+    foreign key (guild_id)
+        references guilds (id)
+        on delete cascade
 );
 
-CREATE TABLE bot_configs
+CREATE TABLE bag_configs
 (
-    guild_id       bigint  not null primary key,
-    setup_done     boolean not null default false,
-    mod_role       bigint,
-    bot_channel    bigint,
-    listen_to_bots boolean not null default false,
-    command_prefix text    not null default '!',
-    silence_role   bigint,
-    member_role    bigint,
-    FOREIGN KEY (guild_id)
-        REFERENCES guilds (id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
+    guild_id bigint not null primary key,
+    capacity bigint not null default 10,
+    foreign key (guild_id)
+        references guilds (id)
+        on delete cascade
 );
 
-CREATE TABLE free_channels
+CREATE TABLE bag_items
 (
-    bot_config_id bigint not null,
-    channel_id    bigint not null,
-    PRIMARY KEY (bot_config_id, channel_id),
-    FOREIGN KEY (bot_config_id)
-        REFERENCES bot_configs (guild_id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
+    id       integer not null primary key autoincrement,
+    guild_id bigint  not null,
+    name     text    not null,
+    foreign key (guild_id)
+        references guilds (id)
+        on delete cascade
 );
 
-CREATE TABLE command_aliases
-(
-    bot_config_id bigint not null,
-    frm           text   not null,
-    dest          text   not null,
-    PRIMARY KEY (bot_config_id, frm),
-    FOREIGN KEY (bot_config_id)
-        REFERENCES bot_configs (guild_id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
-);
+CREATE INDEX bag_item_guilds ON bag_items (guild_id);
 
-CREATE TABLE modules
-(
-    id   bigint not null primary key autoincrement,
-    name text    not null unique
-);
-
-CREATE TABLE disabled_modules
-(
-    module_id     bigint not null,
-    bot_config_id bigint  not null,
-    PRIMARY KEY (module_id, bot_config_id),
-    FOREIGN KEY (bot_config_id)
-        REFERENCES bot_configs (guild_id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION,
-    FOREIGN KEY (module_id)
-        REFERENCES modules (id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
-);
-
-CREATE TABLE commands
-(
-    id        bigint not null primary key autoincrement,
-    module_id bigint not null,
-    name      text    not null unique,
-    FOREIGN KEY (module_id)
-        REFERENCES modules (id)
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION
-);
-
-CREATE TABLE command_roles
-(
-    bot_config_id bigint not null,
-    command_id bigint not null,
-    role_id bigint not null,
-    PRIMARY KEY (bot_config_id, command_id, role_id)
-)
-
+CREATE TRIGGER bag_item_cap
+    BEFORE INSERT
+    ON bag_items
+BEGIN
+    SELECT CASE
+               WHEN
+                           (SELECT capacity FROM bag_configs B WHERE B.guild_id = NEW.guild_id) <
+                           (SELECT COUNT(*) FROM bag_items B WHERE B.guild_id = NEW.guild_id) + 1 THEN
+                   RAISE(ABORT, 'Bag is full')
+               END;
+END;
 
 
 

@@ -11,7 +11,6 @@ use serenity::model::prelude::*;
 use serenity::prelude::*;
 use thiserror::Error as ThisErr;
 
-use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
 use crate::glimbot::GlimDispatch;
 use crate::glimbot::util::FromError;
 
@@ -129,7 +128,7 @@ impl FromError for CommanderError {
     }
 }
 
-pub type ActionFn = fn(&GlimDispatch, &Commander, &RwGuildPtr, &Context, &Message, &[Arg]) -> Result<()>;
+pub type ActionFn = fn(&GlimDispatch, &Commander, GuildId, &Context, &Message, &[Arg]) -> Result<()>;
 pub type Result<T> = StdRes<T, CommanderError>;
 
 /// The responsibility for controlling *who* can issue commands exists outside of this module.
@@ -179,7 +178,7 @@ impl Commander {
         }
     }
 
-    pub fn invoke(&self, dispatch: &GlimDispatch, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
+    pub fn invoke(&self, dispatch: &GlimDispatch, g: GuildId, ctx: &Context, msg: &Message, args: impl AsRef<[String]>) -> Result<()> {
         let parsed_args = self.parse_args(args.as_ref())?;
         (self.action)(dispatch, self, g, ctx, msg, &parsed_args)
     }

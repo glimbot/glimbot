@@ -1,20 +1,19 @@
 use log::error;
+use log::trace;
 use once_cell::sync::Lazy;
 use serenity::model::Permissions;
-use serenity::model::prelude::Message;
+use serenity::model::prelude::{GuildId, Message};
 use serenity::prelude::Context;
+use serenity::utils::{content_safe, ContentSafeOptions};
+use serenity::utils::MessageBuilder;
 
-use crate::glimbot::guilds::{GuildContext, RwGuildPtr};
+use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::{Module, ModuleBuilder};
 use crate::glimbot::modules::command::*;
 use crate::glimbot::modules::command::ArgType::Str;
-use log::trace;
-use serenity::utils::{content_safe, ContentSafeOptions};
 use crate::glimbot::modules::command::CommanderError::{Other, OtherError};
-use serenity::utils::MessageBuilder;
-use crate::glimbot::GlimDispatch;
 
-fn ping(_d: &GlimDispatch, _cmd: &Commander, _g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn ping(_d: &GlimDispatch, _cmd: &Commander, _g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
         if args.len() > 0 {
             if let Arg::Str(s) = &args[0] {

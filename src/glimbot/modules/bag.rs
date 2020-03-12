@@ -1,47 +1,29 @@
-use crate::glimbot::modules::{ModuleConfig, Module, ModuleBuilder};
-use serde_yaml::{Value, Sequence};
-use crate::glimbot::GlimDispatch;
-use crate::glimbot::modules::command::{Commander, Arg, ArgType, CommanderError};
-use crate::glimbot::guilds::RwGuildPtr;
-use serenity::prelude::Context;
-use serenity::model::prelude::Message;
-use super::command::Result;
-use serenity::model::Permissions;
-use thiserror::Error as ThisErr;
-use serenity::utils::{content_safe, ContentSafeOptions, MessageBuilder};
-use crate::glimbot::modules::command::CommanderError::{RuntimeError, Silent};
-use crate::glimbot::util::{FromError, say_codeblock};
+use std::result::Result as StdRes;
+
+use diesel::{Connection, delete, insert_into, insert_or_ignore_into, RunQueryDsl, select};
+use diesel::result::Error;
 use parking_lot::RwLockUpgradableReadGuard;
 use rand::prelude::*;
-use std::result::Result as StdRes;
 use serde::{Deserialize, Serialize};
+use serde_yaml::{Sequence, Value};
+use serenity::model::Permissions;
+use serenity::model::prelude::{GuildId, Message};
+use serenity::prelude::Context;
+use serenity::utils::{content_safe, ContentSafeOptions, MessageBuilder};
+use thiserror::Error as ThisErr;
+
+use crate::diesel::ExpressionMethods;
+use crate::diesel::QueryDsl;
+use crate::glimbot::GlimDispatch;
+use crate::glimbot::modules::{Module, ModuleBuilder};
+use crate::glimbot::modules::command::{Arg, ArgType, Commander, CommanderError};
+use crate::glimbot::modules::command::CommanderError::{RuntimeError, Silent};
+use crate::glimbot::util::{FromError, say_codeblock};
+
+use super::command::Result;
 
 const BAG_MAX_ITEMS: usize = 10;
 const BAG_ITEM_MAX_SIZE: usize = 50;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BagConfig {
-    bag: Vec<String>,
-    capacity: usize,
-}
-
-impl AsRef<BagConfig> for ModuleConfig {
-    fn as_ref(&self) -> &BagConfig {
-        match self {
-            ModuleConfig::Bag(b) => { b }
-            e => panic!("Got {:?}, expected Bag", e)
-        }
-    }
-}
-
-impl AsMut<BagConfig> for ModuleConfig {
-    fn as_mut(&mut self) -> &mut BagConfig {
-        match self {
-            ModuleConfig::Bag(b) => { b }
-            e => panic!("Got {:?}, expected Bag", e)
-        }
-    }
-}
 
 #[derive(ThisErr, Debug, Clone)]
 pub enum BagError {
@@ -51,47 +33,14 @@ pub enum BagError {
     BagEmpty,
 }
 
-impl BagConfig {
-    pub fn new() -> BagConfig {
-        BagConfig {
-            bag: Vec::new(),
-            capacity: BAG_MAX_ITEMS,
-        }
-    }
-
-    pub fn add_item(&mut self, val: impl Into<String>) -> StdRes<(), BagError> {
-        if self.capacity > self.bag.len() {
-            self.bag.push(val.into());
-            Ok(())
-        } else {
-            Err(BagError::BagFull(self.capacity))
-        }
-    }
-
-    pub fn remove_item_rand(&mut self) -> StdRes<String, BagError> {
-        if self.bag.is_empty() {
-            Err(BagError::BagEmpty)
-        } else {
-            let mut rng = rand::thread_rng();
-            let idx = rng.gen_range(0, self.bag.len());
-            Ok(self.bag.remove(idx))
-        }
-    }
-
-    pub fn item_can_be_added(&self) -> bool {
-        self.bag.len() < self.capacity
-    }
-
-    pub fn items(&self) -> &[String] {
-        &self.bag
-    }
+pub fn bag_module_config(disp: &GlimDispatch, g: GuildId) {
+    use crate::glimbot::schema::bag_configs::dsl::*;
+    let conn = disp.wr_conn().lock();
+    insert_or_ignore_into(bag_configs).values(guild_id.eq(g.0 as i64)).execute(conn.as_ref()).unwrap();
 }
 
-pub fn bag_module_config() -> ModuleConfig {
-    ModuleConfig::Bag(BagConfig::new())
-}
-
-fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+    use crate::glimbot::schema::bag_items::dsl::*;
     let item = String::from(args[0].clone());
     let cleaned_item = content_safe(&ctx, &item, &ContentSafeOptions::default());
 
@@ -99,39 +48,32 @@ fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: &RwGuildPtr, ctx: &Context,
         return Err(RuntimeError("Item is too big!".to_string()));
     };
 
-    let mod_config = {
-        let gid = g.read().guild;
-        disp.ensure_module_config(gid, "bag")
-    };
-
-
-    let res = {
-        let mut guard = mod_config.write();
-        let bag: &mut BagConfig = guard.as_mut();
-        bag.add_item(cleaned_item)
-    };
+    disp.ensure_module_config(g, "bag");
+    let res = insert_into(bag_items).values((guild_id.eq(g.0 as i64), name.eq(cleaned_item)))
+        .execute(disp.wr_conn.lock().as_ref());
 
     if let Err(e) = res {
-        say_codeblock(ctx, msg.channel_id, e).map_err(|_| Silent)?;
+        let message = match &e {
+            Error::DatabaseError(k, i) => {i.message()},
+            _ => {panic!("{}", e)}
+        };
+        say_codeblock(ctx, msg.channel_id, message).map_err(|_| Silent)?;
     } else {
         say_codeblock(ctx, msg.channel_id, "Added item to bag.").map_err(|_| Silent)?;
-        g.write().commit_to_disk();
     }
 
     Ok(())
 }
 
-fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
-    let mod_config = {
-        let gid = g.read().guild;
-        disp.ensure_module_config(gid, "bag")
-    };
+fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+    disp.ensure_module_config(g, "bag");
+    use crate::glimbot::schema::bag_items::dsl::*;
 
-    let local: Vec<_> = {
-        let rug = mod_config.read();
-        let bag: &BagConfig = rug.as_ref();
-        bag.items().iter().cloned().collect()
-    };
+    let conn = disp.rd_conn();
+    let local: Vec<String> = bag_items
+        .select(name)
+        .filter(guild_id.eq(g.0 as i64))
+        .load(&conn).unwrap();
 
     let message = if local.len() > 0 {
         MessageBuilder::new()
@@ -146,26 +88,33 @@ fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: &RwGuildPtr, ctx: &Context,
     Ok(())
 }
 
-fn bag_yeet(disp: &GlimDispatch, cmd: &Commander, g: &RwGuildPtr, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
-    let mod_config = {
-        let gid = g.read().guild;
-        disp.ensure_module_config(gid, "bag")
+no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
+
+fn bag_yeet(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+    disp.ensure_module_config(g, "bag");
+    use crate::glimbot::schema::bag_items::dsl::*;
+
+    let res: StdRes<String, diesel::result::Error> = {
+        let conn = disp.wr_conn().lock();
+        conn.transaction(|| {
+            let item: Vec<(i32, String)> = bag_items
+                .select((id, name))
+                .filter(guild_id.eq(g.0 as i64))
+                .order(RANDOM)
+                .limit(1)
+                .load(conn.as_ref())?;
+
+            let row_id = &item[0].0;
+            let i = item[0].1.to_owned();
+
+            delete(bag_items.filter(id.eq(row_id))).execute(conn.as_ref())?;
+            Ok(i)
+        })
     };
 
-    let res = {
-        let mut guard = mod_config.write();
-        let bag: &mut BagConfig = guard.as_mut();
-        bag.remove_item_rand()
-    };
-
-    let changed = res.is_ok();
     let message = match res {
-        Ok(s) => {s},
+        Ok(s) => {format!("Yeeted a(n) {}", s)},
         Err(e) => {format!("{}", e)},
-    };
-
-    if changed {
-        g.write().commit_to_disk();
     };
 
     say_codeblock(ctx, msg.channel_id, message).map_err(|_| Silent)?;

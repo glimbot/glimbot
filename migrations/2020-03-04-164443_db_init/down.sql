@@ -2,9 +2,8 @@
 PRAGMA foreign_keys = OFF;
 
 DROP TABLE guilds;
-DROP TABLE bot_configs;
-DROP TABLE command_aliases;
-DROP TABLE free_channels;
-DROP TABLE guild_owners;
+DROP TABLE incrementers;
+DROP TABLE bag_configs;
+DROP TABLE bag_items;
 
 PRAGMA foreign_keys = ON;

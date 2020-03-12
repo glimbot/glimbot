@@ -1,36 +1,29 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::hash_map::RandomState;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt::Display;
 use std::sync::Arc;
 
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, Serializer};
 use serde::export::Formatter;
+use serde_yaml::Value;
+use serenity::model::id::GuildId;
 use serenity::model::permissions::Permissions;
 use serenity::model::prelude::EventType;
 
-use crate::glimbot::EventHandler;
+use crate::glimbot::{EventHandler, GlimDispatch};
 use crate::glimbot::modules::command::Commander;
-use parking_lot::RwLock;
-use std::collections::hash_map::RandomState;
-use serde_yaml::Value;
-use crate::glimbot::modules::bag::BagConfig;
 
 pub mod command;
 pub mod ping;
 pub mod help;
 pub mod bag;
+pub mod incrementer;
 
-#[derive(Debug, Deserialize, Serialize)]
-pub enum ModuleConfig {
-    Bag(BagConfig),
-    None
-}
-
-pub type RwModuleConfigPtr = Arc<RwLock<ModuleConfig>>;
-
-pub type ConfigFn = fn() -> ModuleConfig;
+pub type ConfigFn = fn(&GlimDispatch, GuildId) -> ();
 
 #[derive(Clone)]
 pub struct Module {
@@ -54,12 +47,8 @@ impl Module {
         &self.hooks
     }
 
-    pub fn default_config(&self) -> ModuleConfig {
-        (self.create_config)()
-    }
-
-    pub fn wrapped_default_config(&self) -> RwModuleConfigPtr {
-        RwModuleConfigPtr::new(RwLock::new(self.default_config()))
+    pub fn write_default_config(&self, disp: &GlimDispatch, g: GuildId) {
+        (self.create_config)(disp, g)
     }
 
     pub fn required_perms(&self) -> Permissions {
@@ -72,9 +61,7 @@ pub struct ModuleBuilder {
     module: Module
 }
 
-pub fn default_config() -> ModuleConfig {
-    ModuleConfig::None
-}
+pub fn default_config(_: &GlimDispatch, _: GuildId) {}
 
 impl ModuleBuilder {
     pub fn new(name: impl Into<String>) -> ModuleBuilder {
