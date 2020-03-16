@@ -117,14 +117,22 @@ pub enum CommanderError {
     #[error("Glimmy's backend is having issues.")]
     Other,
     #[error("Something went wrong: {0}")]
-    OtherError(#[from] Box<dyn std::error::Error>),
+    OtherError(Box<dyn std::error::Error>),
     #[error("")]
-    Silent
+    Silent,
+    #[error("Something went wrong: {0}")]
+    SilentError(#[from] Box<dyn std::error::Error>)
 }
 
 impl FromError for CommanderError {
     fn from_error(e: impl StdErr + 'static) -> Self {
         CommanderError::OtherError(Box::new(e))
+    }
+}
+
+impl CommanderError {
+    pub fn silent(e: impl StdErr + 'static) -> Self {
+        CommanderError::SilentError(Box::new(e))
     }
 }
 

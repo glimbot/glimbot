@@ -16,7 +16,7 @@ use regex::Regex;
 use serenity::http::CacheHttp;
 use serenity::model::event::{Event, EventType, MessageUpdateEvent};
 use serenity::model::gateway::Ready;
-use serenity::model::id::{ChannelId, MessageId};
+use serenity::model::id::{ChannelId, MessageId, UserId};
 use serenity::model::prelude::{GuildId, Message};
 use serenity::prelude::{Context, EventHandler as EHandler};
 use serenity::utils::MessageBuilder;
@@ -28,6 +28,9 @@ use crate::glimbot::modules::Module;
 use crate::glimbot::modules::command::{Commander, CommanderError};
 use crate::glimbot::modules::command::parser::RawCmd;
 use crate::glimbot::util::FromError;
+use crate::glimbot::schema::guilds::columns::star;
+use serenity::client::bridge::gateway::ShardManager;
+use std::sync::atomic::AtomicBool;
 
 pub mod env;
 pub mod config;
@@ -46,6 +49,18 @@ pub enum EventHandler {
     GenericHandler(EventHandlerFn),
     MessageHandler(MessageHandlerFn),
     CommandHandler(CommandHandlerFn),
+}
+
+impl From<CommandHandlerFn> for EventHandler {
+    fn from(f: CommandHandlerFn) -> Self {
+        EventHandler::CommandHandler(f)
+    }
+}
+
+impl From<MessageHandlerFn> for EventHandler {
+    fn from(f: MessageHandlerFn) -> Self {
+        EventHandler::MessageHandler(f)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -76,6 +91,8 @@ pub struct GlimDispatch {
     command_map: HashMap<String, String>,
     db_conn: DBPool,
     wr_conn: Arc<Mutex<Conn>>,
+    owners: Arc<RwLock<HashSet<UserId>>>,
+    shutdown: AtomicBool
 }
 
 impl GlimDispatch {
@@ -90,6 +107,8 @@ impl GlimDispatch {
             db_conn: pool,
             wr_conn: Arc::new(Mutex::new(c)),
             command_map: HashMap::new(),
+            owners: Arc::new(RwLock::new(HashSet::new())),
+            shutdown: AtomicBool::new(false)
         }
     }
 
@@ -109,12 +128,14 @@ impl GlimDispatch {
     // In either case, returns a guild context associated with this id
     pub fn encounter_guild(&self, g: GuildId) {
         use schema::guilds::dsl::*;
-        let new = insert_or_ignore_into(guilds)
-            .values(id.eq(g.0 as i64))
-            .execute(self.wr_conn().lock().as_ref()).unwrap();
+        if guilds.count().filter(id.eq(g.0 as i64)).get_result::<i64>(&self.rd_conn()).unwrap() == 0 {
+            let new = insert_or_ignore_into(guilds)
+                .values(id.eq(g.0 as i64))
+                .execute(self.wr_conn().lock().as_ref()).unwrap();
 
-        if new > 0 {
-            info!("Encountered new guild {}", g)
+            if new > 0 {
+                info!("Encountered new guild {}", g)
+            }
         }
     }
 
@@ -139,6 +160,7 @@ impl GlimDispatch {
 }
 
 impl EHandler for GlimDispatch {
+
     fn message(&self, ctx: Context, new_message: Message) {
         use schema::guilds::dsl::*;
 
@@ -167,8 +189,8 @@ impl EHandler for GlimDispatch {
                 };
             }
 
-            let pref: Vec<String> = guilds.select(command_prefix).filter(id.eq(gid.0 as i64)).load(&self.rd_conn()).unwrap();
-            if new_message.content.starts_with(&pref[0]) {
+            let pref: String = guilds.select(command_prefix).filter(id.eq(gid.0 as i64)).first(&self.rd_conn()).unwrap();
+            if new_message.content.starts_with(&pref) {
                 // This may be a command
                 let cmd: modules::command::Result<String> = if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
                     v.iter()
@@ -176,13 +198,13 @@ impl EHandler for GlimDispatch {
                             EventHandler::CommandHandler(_) => { true }
                             _ => { false }
                         })
-                        .try_fold(new_message.content.clone(), |s, h| {
+                        .try_fold(new_message.content.chars().skip(1).collect::<String>(), |s, h| {
                             if let EventHandler::CommandHandler(c) = h {
                                 c(self, gid, &ctx, &new_message, s)
                             } else {
                                 unreachable!()
                             }
-                        })
+                        }).map(|s| String::from(&pref) + &s)
                 } else {
                     Ok(new_message.content.clone())
                 };
@@ -204,6 +226,9 @@ impl EHandler for GlimDispatch {
                     }
                 }) {
                     Err(CommanderError::Silent) => {}
+                    Err(CommanderError::SilentError(e)) => {
+                        debug!("Command failed: {}", e);
+                    }
                     Err(e) => {
                         if let Err(err) = new_message.channel_id.say(&ctx, MessageBuilder::new()
                             .push_codeblock_safe(e, None)
@@ -230,6 +255,28 @@ impl EHandler for GlimDispatch {
                 self.encounter_guild(g.id());
             }
         );
+
+        let owners = match ctx.http().get_current_application_info() {
+            Ok(info) => {
+                let mut owners = HashSet::new();
+                owners.insert(info.owner.id);
+                owners
+            }
+            Err(why) => {error!("Could not access application info: {:?}", why); HashSet::new()}
+        };
+
+        {
+            let mut dest = self.owners.write();
+            owners.into_iter().for_each(|id| { dest.insert(id); });
+        };
+
+        self.owners.read().iter().for_each(
+            |id| debug!("Found owner {}", ctx.http()
+                .get_user(id.0)
+                .map(|u| u.name)
+                .unwrap_or_else(|_| id.to_string()))
+        );
+
         ctx.set_activity(Activity::playing("Cultist Simulator"));
     }
 }

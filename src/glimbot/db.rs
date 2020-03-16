@@ -19,6 +19,10 @@ impl SimpleConnection for GlimConn {
     }
 }
 
+/// Sets up a connection to the SQLite DB and ensures that busy time out is high, sync mode is NORMAL,
+/// foreign key constraints are enforced, and that the DB is in WAL mode.
+///
+/// This gives much better write performance for SQLite.
 impl Connection for GlimConn {
     type Backend = <SqliteConnection as Connection>::Backend;
     type TransactionManager = <SqliteConnection as Connection>::TransactionManager;
@@ -148,4 +152,16 @@ pub struct Incrementer {
     pub guild_id: i64,
     pub name: String,
     pub count: i64
+}
+
+impl Incrementer {
+    pub fn new(g: GuildId, name: impl Into<String>) -> Incrementer {
+        Incrementer {guild_id: g.0 as i64, name: name.into(), count: 0}
+    }
+
+    pub fn with_count(g: GuildId, name: impl Into<String>, init: i64) -> Incrementer {
+        let mut out = Self::new(g, name);
+        out.count = init;
+        out
+    }
 }

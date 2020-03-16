@@ -22,6 +22,8 @@ use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::bag::bag_module;
 use crate::glimbot::modules::help::help_module;
 use crate::glimbot::modules::ping::ping_module;
+use crate::glimbot::modules::bot_admin::bot_admin_module;
+use crate::glimbot::modules::incrementer::incrementer_module;
 
 mod glimbot;
 
@@ -100,9 +102,11 @@ fn main() {
     let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
 
     let mut glim = GlimDispatch::new()
+        .with_module(incrementer_module())
         .with_module(ping_module())
         .with_module(help_module())
-        .with_module(bag_module());
+        .with_module(bag_module())
+        .with_module(bot_admin_module());
 
     let mut client = Client::new(conf_map.token(), glim)
         .expect("Could not connect to Discord. B̵a̵n̵i̵s̵h̵ ̵s̵p̵e̵l̵l̵ ̵i̵n̵e̵f̵f̵e̵c̵t̵i̵v̵e̵.");

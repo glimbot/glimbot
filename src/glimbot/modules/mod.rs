@@ -22,6 +22,7 @@ pub mod ping;
 pub mod help;
 pub mod bag;
 pub mod incrementer;
+pub mod bot_admin;
 
 pub type ConfigFn = fn(&GlimDispatch, GuildId) -> ();
 

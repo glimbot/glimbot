@@ -35,8 +35,10 @@ pub enum BagError {
 
 pub fn bag_module_config(disp: &GlimDispatch, g: GuildId) {
     use crate::glimbot::schema::bag_configs::dsl::*;
-    let conn = disp.wr_conn().lock();
-    insert_or_ignore_into(bag_configs).values(guild_id.eq(g.0 as i64)).execute(conn.as_ref()).unwrap();
+    if bag_configs.count().filter(guild_id.eq(g.0 as i64)).get_result::<i64>(&disp.rd_conn()).unwrap() == 0 {
+        let conn = disp.wr_conn().lock();
+        insert_or_ignore_into(bag_configs).values(guild_id.eq(g.0 as i64)).execute(conn.as_ref()).unwrap();
+    }
 }
 
 fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
@@ -57,9 +59,9 @@ fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg
             Error::DatabaseError(k, i) => {i.message()},
             _ => {panic!("{}", e)}
         };
-        say_codeblock(ctx, msg.channel_id, message).map_err(|_| Silent)?;
+        say_codeblock(ctx, msg.channel_id, message);
     } else {
-        say_codeblock(ctx, msg.channel_id, "Added item to bag.").map_err(|_| Silent)?;
+        say_codeblock(ctx, msg.channel_id, "Added item to bag.");
     }
 
     Ok(())
@@ -84,7 +86,7 @@ fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg
         "The bag is empty.".to_string()
     };
 
-    say_codeblock(&ctx, msg.channel_id, message).map_err(|_| Silent)?;
+    say_codeblock(&ctx, msg.channel_id, message);
     Ok(())
 }
 
@@ -117,7 +119,7 @@ fn bag_yeet(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg
         Err(e) => {format!("{}", e)},
     };
 
-    say_codeblock(ctx, msg.channel_id, message).map_err(|_| Silent)?;
+    say_codeblock(ctx, msg.channel_id, message);
     Ok(())
 }
 
