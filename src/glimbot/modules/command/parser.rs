@@ -32,7 +32,7 @@ pub fn parse_command(s: impl AsRef<str>) -> super::Result<RawCmd> {
             }
             Rule::arg => {
                 args.push(
-                    component.as_str().to_string()
+                    unescape(component.as_str())
                 );
             }
             _ => (),
@@ -40,6 +40,18 @@ pub fn parse_command(s: impl AsRef<str>) -> super::Result<RawCmd> {
     };
 
     Ok(RawCmd { prefix: prefix.to_string(), command: command.to_string(), args })
+}
+
+fn unescape(s: impl AsRef<str>) -> String {
+    let s = s.as_ref();
+    if s.starts_with("\"") {
+        let mut out = s.replace(r#"\""#, "\"");
+        out.remove(0);
+        out.pop();
+        out
+    } else {
+        s.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -67,5 +79,12 @@ mod tests {
         assert_eq!(command.prefix, "~");
         assert_eq!(command.command, "pong");
         assert_eq!(command.args.len(), 6);
+    }
+
+    #[test]
+    fn test_unescape() {
+        let s = r#""\"this is an escaped string\"""#;
+        let unescaped = unescape(s);
+        assert_eq!(unescaped, "\"this is an escaped string\"");
     }
 }
