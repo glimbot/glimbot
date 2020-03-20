@@ -10,10 +10,10 @@ die = ${num ~ "d" ~ num}
 atom = {die | num}
 op = {"+" | "-"}
 expr = {
-    (atom ~ expr_tail)
-    | ("(" ~ expr ~ ")" ~ expr_tail)
+    (atom ~ expr_tail*)
+    | ("(" ~ expr ~ ")" ~ expr_tail*)
 }
 
-expr_tail = { (op ~ expr)* }
+expr_tail = { op ~ expr }
 
 roll = {SOI ~ expr ~ EOI}
