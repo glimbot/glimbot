@@ -1,6 +1,6 @@
 /target
 config.yaml
 *log.txt
-glimbot.db
+glimbot.db*
 src/glimbot/schema.rs
 *_conf.yaml

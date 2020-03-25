@@ -1,10 +1,10 @@
-CREATE TABLE guilds
+CREATE TABLE IF NOT EXISTS guilds
 (
     id             bigint not null primary key,
     command_prefix text   not null default '!'
 );
 
-CREATE TABLE incrementers
+CREATE TABLE IF NOT EXISTS incrementers
 (
     guild_id bigint not null,
     name     text   not null,
@@ -15,7 +15,7 @@ CREATE TABLE incrementers
         on delete cascade
 );
 
-CREATE TABLE bag_configs
+CREATE TABLE IF NOT EXISTS bag_configs
 (
     guild_id bigint not null primary key,
     capacity bigint not null default 10,
@@ -24,7 +24,7 @@ CREATE TABLE bag_configs
         on delete cascade
 );
 
-CREATE TABLE bag_items
+CREATE TABLE IF NOT EXISTS bag_items
 (
     id       integer not null primary key autoincrement,
     guild_id bigint  not null,
@@ -34,9 +34,9 @@ CREATE TABLE bag_items
         on delete cascade
 );
 
-CREATE INDEX bag_item_guilds ON bag_items (guild_id);
+CREATE INDEX IF NOT EXISTS bag_item_guilds ON bag_items (guild_id);
 
-CREATE TRIGGER bag_item_cap
+CREATE TRIGGER IF NOT EXISTS bag_item_cap
     BEFORE INSERT
     ON bag_items
 BEGIN

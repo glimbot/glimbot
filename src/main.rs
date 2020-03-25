@@ -24,6 +24,7 @@ use crate::glimbot::modules::help::help_module;
 use crate::glimbot::modules::ping::ping_module;
 use crate::glimbot::modules::bot_admin::bot_admin_module;
 use crate::glimbot::modules::incrementer::incrementer_module;
+use crate::glimbot::modules::dice::roll_module;
 
 mod glimbot;
 
@@ -101,8 +102,9 @@ fn main() {
 
     let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
 
-    let mut glim = GlimDispatch::new()
+    let glim = GlimDispatch::new()
         .with_module(incrementer_module())
+        .with_module(roll_module())
         .with_module(ping_module())
         .with_module(help_module())
         .with_module(bag_module())
