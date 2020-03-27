@@ -4,6 +4,7 @@
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate log;
 #[macro_use] extern crate pest_derive;
+#[macro_use] extern crate diesel_migrations;
 
 use std::fs::File;
 use std::path::Path;
@@ -22,11 +23,14 @@ use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::bag::bag_module;
 use crate::glimbot::modules::help::help_module;
 use crate::glimbot::modules::ping::ping_module;
-use crate::glimbot::modules::bot_admin::bot_admin_module;
+use crate::glimbot::modules::bot_admin::{bot_admin_module, bot_stats_module};
 use crate::glimbot::modules::incrementer::incrementer_module;
 use crate::glimbot::modules::dice::roll_module;
+use crate::glimbot::db::{establish_connection, pooled_connection};
 
 mod glimbot;
+
+embed_migrations!();
 
 fn init_logging(cwd: &str, level: log::LevelFilter) -> std::result::Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -97,6 +101,10 @@ fn main() {
         _ => log::LevelFilter::Trace
     };
 
+    let conn = pooled_connection("glimbot.db");
+    embedded_migrations::run(&conn.get().unwrap()).unwrap();
+    std::mem::drop(conn);
+
     init_logging(wd, stdout_log_level).unwrap();
     info!("Glimbot version {} coming online.", glimbot::env::VERSION);
 
@@ -108,7 +116,8 @@ fn main() {
         .with_module(ping_module())
         .with_module(help_module())
         .with_module(bag_module())
-        .with_module(bot_admin_module());
+        .with_module(bot_admin_module())
+        .with_module(bot_stats_module());
 
     let mut client = Client::new(conf_map.token(), glim)
         .expect("Could not connect to Discord. B̵a̵n̵i̵s̵h̵ ̵s̵p̵e̵l̵l̵ ̵i̵n̵e̵f̵f̵e̵c̵t̵i̵v̵e̵.");

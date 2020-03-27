@@ -56,7 +56,7 @@ fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg
 
     if let Err(e) = res {
         let message = match &e {
-            Error::DatabaseError(k, i) => {i.message()},
+            Error::DatabaseError(_k, i) => {i.message()},
             _ => {panic!("{}", e)}
         };
         say_codeblock(ctx, msg.channel_id, message);

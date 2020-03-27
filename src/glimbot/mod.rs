@@ -42,7 +42,7 @@ pub(crate) mod schema;
 
 pub type EventHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Event) -> bool;
 pub type MessageHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Message) -> bool;
-pub type CommandHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Message, String) -> modules::command::Result<String>;
+pub type CommandHandlerFn = fn(&GlimDispatch, GuildId, &Context, &Message, RawCmd) -> modules::command::Result<RawCmd>;
 
 #[derive(Clone)]
 pub enum EventHandler {
@@ -92,7 +92,7 @@ pub struct GlimDispatch {
     db_conn: DBPool,
     wr_conn: Arc<Mutex<Conn>>,
     owners: Arc<RwLock<HashSet<UserId>>>,
-    shutdown: AtomicBool
+    shutdown: AtomicBool,
 }
 
 impl GlimDispatch {
@@ -108,7 +108,7 @@ impl GlimDispatch {
             wr_conn: Arc::new(Mutex::new(c)),
             command_map: HashMap::new(),
             owners: Arc::new(RwLock::new(HashSet::new())),
-            shutdown: AtomicBool::new(false)
+            shutdown: AtomicBool::new(false),
         }
     }
 
@@ -160,7 +160,6 @@ impl GlimDispatch {
 }
 
 impl EHandler for GlimDispatch {
-
     fn message(&self, ctx: Context, new_message: Message) {
         use schema::guilds::dsl::*;
 
@@ -192,28 +191,29 @@ impl EHandler for GlimDispatch {
             let pref: String = guilds.select(command_prefix).filter(id.eq(gid.0 as i64)).first(&self.rd_conn()).unwrap();
             if new_message.content.starts_with(&pref) {
                 // This may be a command
-                let cmd: modules::command::Result<String> = if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
-                    v.iter()
-                        .filter(|e| match e {
-                            EventHandler::CommandHandler(_) => { true }
-                            _ => { false }
-                        })
-                        .try_fold(new_message.content.chars().skip(1).collect::<String>(), |s, h| {
-                            if let EventHandler::CommandHandler(c) = h {
-                                c(self, gid, &ctx, &new_message, s)
-                            } else {
-                                unreachable!()
-                            }
-                        }).map(|s| String::from(&pref) + &s)
+                let raw_cmd = modules::command::parser::parse_command(&new_message.content);
+
+                let cmd: modules::command::Result<RawCmd> = if let Some(v) = self.hooks.get(&EventType::MessageCreate) {
+                    raw_cmd.and_then(|rc| {
+                        v.iter()
+                            .filter(|e| match e {
+                                EventHandler::CommandHandler(_) => { true }
+                                _ => { false }
+                            })
+                            .try_fold(rc, |s, h| {
+                                if let EventHandler::CommandHandler(c) = h {
+                                    c(self, gid, &ctx, &new_message, s)
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                    })
                 } else {
-                    Ok(new_message.content.clone())
+                    raw_cmd
                 };
 
-                let raw_cmd = cmd.and_then(
-                    |s| modules::command::parser::parse_command(s)
-                );
 
-                match raw_cmd.and_then(|r| {
+                match cmd.and_then(|r| {
                     let module = self.command_map.get(&r.command);
                     if let Some(name) = module {
                         let c = self.resolve_command(&r.command).unwrap();
@@ -262,7 +262,10 @@ impl EHandler for GlimDispatch {
                 owners.insert(info.owner.id);
                 owners
             }
-            Err(why) => {error!("Could not access application info: {:?}", why); HashSet::new()}
+            Err(why) => {
+                error!("Could not access application info: {:?}", why);
+                HashSet::new()
+            }
         };
 
         {

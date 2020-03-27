@@ -509,6 +509,7 @@ dependencies = [
  "diesel_migrations",
  "fern",
  "libsqlite3-sys",
+ "lock_api",
  "log",
  "nom 5.1.1",
  "num",
@@ -522,6 +523,7 @@ dependencies = [
  "serde_yaml",
  "serenity",
  "thiserror",
+ "typemap",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use crate::glimbot::GlimDispatch;
+use crate::glimbot::{GlimDispatch, EventHandler};
 use crate::glimbot::modules::command::{Commander, Arg, CommanderError, ArgType};
 use serenity::model::id::GuildId;
 use serenity::prelude::Context;
@@ -8,6 +8,8 @@ use crate::glimbot::modules::dice::parser::parse_roll;
 use crate::glimbot::util::{FromError, say_codeblock};
 use crate::glimbot::modules::{ModuleBuilder, Module};
 use serenity::model::Permissions;
+use crate::glimbot::modules::command::parser::RawCmd;
+use serenity::model::event::EventType::MessageCreate;
 
 fn roll(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let arg = args[0].to_string();
@@ -17,6 +19,18 @@ fn roll(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &
     trace!("{}", &res);
     say_codeblock(ctx, msg.channel_id, res);
     Ok(())
+}
+
+pub fn command_hook(disp: &GlimDispatch, g: GuildId, _ctx: &Context, msg: &Message, cmd: RawCmd) -> crate::glimbot::modules::command::Result<RawCmd> {
+    if &cmd.command != "roll" {
+        Ok(cmd)
+    } else {
+        Ok(RawCmd {
+            args: vec![cmd.args.join(" ")],
+            command: cmd.command,
+            prefix: cmd.prefix,
+        })
+    }
 }
 
 pub fn roll_module() -> Module {
@@ -29,8 +43,9 @@ pub fn roll_module() -> Module {
                 vec![ArgType::Str],
                 vec![],
                 Permissions::SEND_MESSAGES,
-                roll
+                roll,
             )
         )
+        .with_hook(MessageCreate, EventHandler::CommandHandler(command_hook))
         .build()
 }

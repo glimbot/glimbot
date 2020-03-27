@@ -3,7 +3,7 @@ use pest_derive::Parser;
 
 use crate::glimbot::modules::command::CommanderError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawCmd {
     pub prefix: String,
     pub command: String,

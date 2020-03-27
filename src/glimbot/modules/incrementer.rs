@@ -60,6 +60,7 @@ fn increment(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, m
     let inc_name = String::from(args[0].clone());
     let cleaned = content_safe(&ctx, inc_name, &ContentSafeOptions::default());
 
+    trace!("Starting increment");
     let counter_value = {
         let conn = disp.wr_conn().lock();
         let res: diesel::result::QueryResult<i64> = incrementers
@@ -85,6 +86,7 @@ fn increment(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, m
             .execute(conn.as_ref()).map_err(CommanderError::silent)?;
         cur_value
     };
+    trace!("End increment");
 
     say_codeblock(ctx, msg.channel_id, format!("{} is now {}", &cleaned, counter_value));
     trace!("Incremented {} in guild {}; new value {}", &cleaned, g, counter_value);
