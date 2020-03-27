@@ -13,5 +13,4 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::glimbot::config::Config;
 }

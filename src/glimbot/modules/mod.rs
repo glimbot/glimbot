@@ -1,15 +1,5 @@
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::collections::hash_map::RandomState;
-use std::convert::TryFrom;
-use std::error::Error;
-use std::fmt::Display;
-use std::sync::Arc;
 
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize, Serializer};
-use serde::export::Formatter;
-use serde_yaml::Value;
+use std::collections::{BTreeMap, HashMap};
 use serenity::model::id::GuildId;
 use serenity::model::permissions::Permissions;
 use serenity::model::prelude::EventType;

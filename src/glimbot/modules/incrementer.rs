@@ -1,22 +1,20 @@
-use diesel::{insert_into, QueryDsl, ExpressionMethods, insert_or_ignore_into, RunQueryDsl, Connection, update, delete, QueryResult};
+use diesel::{ QueryDsl, ExpressionMethods, insert_or_ignore_into, RunQueryDsl, update, delete, QueryResult};
 use serenity::model::channel::Message;
 use serenity::prelude::Context;
 use serenity::utils::{content_safe, ContentSafeOptions};
 
 use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::command::{Arg, Commander, CommanderError, ArgType};
-use crate::glimbot::schema::incrementers::dsl::*;
 
 use super::command::Result;
 use crate::glimbot::db::Incrementer;
 use serenity::model::prelude::GuildId;
-use crate::glimbot::modules::command::CommanderError::{Other, Silent, SilentError, RuntimeError};
+use crate::glimbot::modules::command::CommanderError::{Other, RuntimeError};
 use crate::diesel::BoolExpressionMethods;
 use crate::glimbot::util::say_codeblock;
 use diesel::result::Error;
 use crate::glimbot::modules::{ModuleBuilder, Module};
 use serenity::model::Permissions;
-use serde::private::de::Content;
 
 pub const MAX_NAME_LEN: usize = 100;
 

@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
+#![deny(unused_imports)]
 
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate log;
-#[macro_use] extern crate pest_derive;
 #[macro_use] extern crate diesel_migrations;
 
 use std::fs::File;
@@ -11,12 +11,8 @@ use std::path::Path;
 use std::thread;
 
 use clap::{App, Arg};
-use log::{debug, error, info};
 use log::LevelFilter::Info;
 use serenity::Client;
-use serenity::framework::standard::CommandResult;
-use serenity::model::prelude::*;
-use serenity::prelude::*;
 
 use crate::glimbot::config::Config;
 use crate::glimbot::GlimDispatch;
@@ -26,7 +22,7 @@ use crate::glimbot::modules::ping::ping_module;
 use crate::glimbot::modules::bot_admin::{bot_admin_module, bot_stats_module};
 use crate::glimbot::modules::incrementer::incrementer_module;
 use crate::glimbot::modules::dice::roll_module;
-use crate::glimbot::db::{establish_connection, pooled_connection};
+use crate::glimbot::db::{pooled_connection};
 
 mod glimbot;
 

@@ -1,6 +1,5 @@
 use log::error;
 use log::trace;
-use once_cell::sync::Lazy;
 use serenity::model::Permissions;
 use serenity::model::prelude::{GuildId, Message};
 use serenity::prelude::Context;
@@ -11,7 +10,7 @@ use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::{Module, ModuleBuilder};
 use crate::glimbot::modules::command::*;
 use crate::glimbot::modules::command::ArgType::Str;
-use crate::glimbot::modules::command::CommanderError::{Other, OtherError};
+use crate::glimbot::modules::command::CommanderError::{OtherError};
 
 fn ping(_d: &GlimDispatch, _cmd: &Commander, _g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
@@ -63,8 +62,6 @@ pub fn ping_module() -> Module {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn check_ping_help() {}
 }

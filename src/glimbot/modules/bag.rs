@@ -1,11 +1,7 @@
 use std::result::Result as StdRes;
 
-use diesel::{Connection, delete, insert_into, insert_or_ignore_into, RunQueryDsl, select};
+use diesel::{Connection, delete, insert_into, insert_or_ignore_into, RunQueryDsl};
 use diesel::result::Error;
-use parking_lot::RwLockUpgradableReadGuard;
-use rand::prelude::*;
-use serde::{Deserialize, Serialize};
-use serde_yaml::{Sequence, Value};
 use serenity::model::Permissions;
 use serenity::model::prelude::{GuildId, Message};
 use serenity::prelude::Context;
@@ -16,9 +12,9 @@ use crate::diesel::ExpressionMethods;
 use crate::diesel::QueryDsl;
 use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::{Module, ModuleBuilder};
-use crate::glimbot::modules::command::{Arg, ArgType, Commander, CommanderError};
-use crate::glimbot::modules::command::CommanderError::{RuntimeError, Silent};
-use crate::glimbot::util::{FromError, say_codeblock};
+use crate::glimbot::modules::command::{Arg, ArgType, Commander, };
+use crate::glimbot::modules::command::CommanderError::{RuntimeError, };
+use crate::glimbot::util::{say_codeblock};
 
 use super::command::Result;
 

@@ -1,20 +1,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error as StdError;
-use std::io::Write;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::path::{PathBuf};
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
-use diesel::{ExpressionMethods, insert_or_ignore_into, RunQueryDsl, SqliteConnection};
+use diesel::{ExpressionMethods, insert_or_ignore_into, RunQueryDsl};
 use log::{debug, error, info, trace};
-use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
-use parking_lot::RwLockUpgradableReadGuard;
-use regex::Regex;
 use serenity::http::CacheHttp;
-use serenity::model::event::{Event, EventType, MessageUpdateEvent};
+use serenity::model::event::{Event, EventType};
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, MessageId, UserId};
 use serenity::model::prelude::{GuildId, Message};
@@ -23,13 +17,11 @@ use serenity::utils::MessageBuilder;
 use thiserror::Error;
 
 use crate::diesel::QueryDsl;
-use crate::glimbot::db::{Conn, DBPool, Guild, pooled_connection};
+use crate::glimbot::db::{Conn, DBPool, pooled_connection};
 use crate::glimbot::modules::Module;
 use crate::glimbot::modules::command::{Commander, CommanderError};
 use crate::glimbot::modules::command::parser::RawCmd;
 use crate::glimbot::util::FromError;
-use crate::glimbot::schema::guilds::columns::star;
-use serenity::client::bridge::gateway::ShardManager;
 use std::sync::atomic::AtomicBool;
 
 pub mod env;

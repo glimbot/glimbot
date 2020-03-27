@@ -1,18 +1,15 @@
 use log::error;
 use log::trace;
-use once_cell::sync::Lazy;
 use serenity::model::id::GuildId;
 use serenity::model::Permissions;
 use serenity::model::prelude::Message;
 use serenity::prelude::Context;
-use serenity::utils::{content_safe, ContentSafeOptions};
 use serenity::utils::MessageBuilder;
 
 use crate::glimbot::GlimDispatch;
 use crate::glimbot::modules::{Module, ModuleBuilder};
 use crate::glimbot::modules::command::*;
-use crate::glimbot::modules::command::ArgType::Str;
-use crate::glimbot::modules::command::CommanderError::{Other, OtherError};
+use crate::glimbot::modules::command::CommanderError::{OtherError};
 
 const PER_MESSAGE_BYTE_LIM: usize = 2000;
 

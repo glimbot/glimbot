@@ -83,7 +83,6 @@ fn parse_tail(input: Pair<Rule>) -> CmdRes<(char, Roll)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::error::convert_error;
 
     #[test]
     fn simple_roll() {

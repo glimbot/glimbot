@@ -63,7 +63,6 @@ impl RollResult {
 
 impl RollComponent {
     pub fn eval(&self) -> RollResult {
-        use rand;
         let mut out = RollResult::new();
         match self {
             RollComponent::Dice { num_dice, die_type } => {

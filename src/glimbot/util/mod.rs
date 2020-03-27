@@ -2,9 +2,7 @@ use std::error::Error;
 use std::fmt::Display;
 
 use serenity::model::id::ChannelId;
-use serenity::model::prelude::Message;
 use serenity::prelude::Context;
-use serenity::Result;
 use serenity::utils::MessageBuilder;
 
 pub mod rate_limit;

@@ -1,11 +1,9 @@
-use std::collections::HashSet;
+
 use std::error::Error as StdErr;
 use std::fmt::Debug;
 use std::result::Result as StdRes;
 use std::str::FromStr;
 
-use once_cell::sync::Lazy;
-use regex::{Regex, RegexBuilder};
 use serenity::model::permissions::Permissions;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
@@ -15,23 +13,6 @@ use crate::glimbot::GlimDispatch;
 use crate::glimbot::util::FromError;
 
 pub mod parser;
-
-static ARG_RE: Lazy<Regex> = Lazy::new(
-    || RegexBuilder::new(r#"
-    ^. # command prefix, single character
-    (?P<cmd>\w+) # command name
-    (
-    \s+
-        (
-            (\w+) # non-escaped stuff
-            | ("((\\") | [^"])*") # escaped string
-        )
-    )*
-    "#)
-        .ignore_whitespace(true)
-        .build()
-        .unwrap()
-);
 
 #[derive(Debug, Clone)]
 pub enum Arg {
@@ -280,19 +261,5 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_regex() {
-        // Six arguments, command is "ping"
-        let command_str = r#"!ping with arguments 1 2 3 "\"this is an escaped string\"""#;
-        assert!(ARG_RE.is_match(command_str));
-        ARG_RE.captures(command_str).iter().for_each(|x| {
-            x.iter()
-                .filter(|x| x.is_some())
-                .map(|x| x.unwrap())
-                .for_each(|x| println!("{}", x.as_str()))
-        })
-    }
 }
 
