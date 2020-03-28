@@ -63,7 +63,7 @@ fn bag_add(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg
     Ok(())
 }
 
-fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn bag_show(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, _args: &[Arg]) -> Result<()> {
     disp.ensure_module_config(g, "bag");
     use crate::glimbot::schema::bag_items::dsl::*;
 
@@ -88,7 +88,7 @@ fn bag_show(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
-fn bag_yeet(disp: &GlimDispatch, cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn bag_yeet(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, _args: &[Arg]) -> Result<()> {
     disp.ensure_module_config(g, "bag");
     use crate::glimbot::schema::bag_items::dsl::*;
 

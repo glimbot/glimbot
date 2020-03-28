@@ -207,13 +207,13 @@ impl EHandler for GlimDispatch {
 
                 match cmd.and_then(|r| {
                     let module = self.command_map.get(&r.command);
-                    if let Some(name) = module {
+                    if let Some(_name) = module {
                         let c = self.resolve_command(&r.command).unwrap();
                         c.invoke(self, gid, &ctx, &new_message, &r.args)
                     } else {
                         debug!("Got invalid command in channel {}: {}", new_message.channel_id, &r.command);
                         new_message.channel_id.say(&ctx, "```No such command.```")
-                            .map(|x| {})
+                            .map(|_x| {})
                             .map_err(|_| CommanderError::Silent)
                     }
                 }) {
@@ -234,9 +234,9 @@ impl EHandler for GlimDispatch {
         }
     }
 
-    fn message_delete(&self, ctx: Context, channel_id: ChannelId, deleted_message_id: MessageId) {}
+    fn message_delete(&self, _ctx: Context, _channel_id: ChannelId, _deleted_message_id: MessageId) {}
 
-    fn message_delete_bulk(&self, ctx: Context, channel_id: ChannelId, multiple_deleted_messages_ids: Vec<MessageId>) {}
+    fn message_delete_bulk(&self, _ctx: Context, _channel_id: ChannelId, _multiple_deleted_messages_ids: Vec<MessageId>) {}
 
     fn ready(&self, ctx: Context, data_about_bot: Ready) {
         use serenity::model::gateway::Activity;

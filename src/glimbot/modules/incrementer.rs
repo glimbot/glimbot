@@ -99,7 +99,7 @@ fn get_incrementer_value(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx:
 
     let value: i64 = incrementers
         .select(count)
-        .filter((guild_id.eq(g.0 as i64).and(name.eq(&cleaned))))
+        .filter(guild_id.eq(g.0 as i64).and(name.eq(&cleaned)))
         .get_result(&disp.rd_conn())
         .map_err(|e: Error| match e {
             Error::NotFound => RuntimeError(format!("No incrementer called {}", &cleaned)),
@@ -111,7 +111,7 @@ fn get_incrementer_value(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx:
 }
 
 
-fn list_incrementers(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn list_incrementers(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, _args: &[Arg]) -> Result<()> {
     use crate::glimbot::schema::incrementers::dsl::*;
 
     let incs: Vec<String> = incrementers.select(name)

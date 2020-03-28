@@ -11,7 +11,7 @@ use serenity::model::Permissions;
 use crate::glimbot::modules::command::parser::RawCmd;
 use serenity::model::event::EventType::MessageCreate;
 
-fn roll(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn roll(_disp: &GlimDispatch, _cmd: &Commander, _g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let arg = args[0].to_string();
     let roll = parse_roll(&arg)?;
     roll.valid().map_err(CommanderError::from_error)?;
@@ -21,7 +21,7 @@ fn roll(disp: &GlimDispatch, _cmd: &Commander, g: GuildId, ctx: &Context, msg: &
     Ok(())
 }
 
-pub fn command_hook(disp: &GlimDispatch, g: GuildId, _ctx: &Context, msg: &Message, cmd: RawCmd) -> crate::glimbot::modules::command::Result<RawCmd> {
+pub fn command_hook(_disp: &GlimDispatch, _g: GuildId, _ctx: &Context, _msg: &Message, cmd: RawCmd) -> crate::glimbot::modules::command::Result<RawCmd> {
     if &cmd.command != "roll" {
         Ok(cmd)
     } else {

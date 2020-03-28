@@ -13,12 +13,12 @@ use crate::glimbot::modules::command::CommanderError::{OtherError};
 
 const PER_MESSAGE_BYTE_LIM: usize = 2000;
 
-fn help(disp: &GlimDispatch, cmd: &Commander, _g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
+fn help(disp: &GlimDispatch, _cmd: &Commander, _g: GuildId, ctx: &Context, msg: &Message, args: &[Arg]) -> Result<()> {
     let response =
         if args.len() > 0 {
             let cmd = String::from((&args[0]).clone());
             let m = disp.resolve_command(&cmd)
-                .map_or_else(||format!("No such command: {}", &cmd), |s| s.help_msg());
+                .map_or_else(|| format!("No such command: {}", &cmd), |s| s.help_msg());
             vec![m]
         } else {
             let commands = disp.command_map.keys();

@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
-#![deny(unused_imports)]
 
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate log;
