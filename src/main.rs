@@ -7,9 +7,9 @@
 
 use std::env;
 use std::path::Path;
-use crate::info::data_folder;
+use crate::data::data_folder;
 
-pub mod info;
+pub mod data;
 fn main() {
     better_panic::install();
     let _ = dotenv::dotenv();
