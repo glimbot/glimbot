@@ -4,3 +4,4 @@ config.yaml
 glimbot.db*
 src/glimbot/schema.rs
 *_conf.yaml
+.env

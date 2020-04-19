@@ -1,6 +1,6 @@
 [package]
 name = "glimbot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Nicholas Samson <me@nicksamson.com>"]
 edition = "2018"
 
@@ -26,13 +26,19 @@ nom = "5.1.1"
 num = "0.2.1"
 lock_api = "0.3.3"
 typemap = "0.3.3"
+dotenv = "0.15.0"
+dirs = "2.0.2"
+
+[dependencies.futures]
+version = "0.3.4"
+features = ["thread-pool"]
 
 [dependencies.libsqlite3-sys]
 version = "0.9.1"
 features = ["bundled"]
 
 [dependencies.serenity]
-version = "0.8.0"
+version = "0.8.4"
 
 [dependencies.diesel]
 version = "1.4.3"
