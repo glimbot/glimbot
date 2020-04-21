@@ -1,15 +1,17 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 
-#[macro_use] extern crate diesel;
 #[macro_use] extern crate log;
-#[macro_use] extern crate diesel_migrations;
+#[macro_use] extern crate rusqlite;
 
 use std::env;
 use std::path::Path;
 use crate::data::data_folder;
 
 pub mod data;
+pub mod db;
+pub mod util;
+
 fn main() {
     better_panic::install();
     let _ = dotenv::dotenv();
