@@ -128,7 +128,18 @@ pub fn new_conn(p: impl AsRef<Path>) -> Result<rusqlite::Connection> {
 pub fn ensure_guild_db(data_dir: impl Into<PathBuf>, g: GuildId) -> Result<rusqlite::Connection> {
     let mut db_name = data_dir.into();
     db_name.push(format!("{}.sqlite3", g));
-    new_conn(&db_name)
+    let mut conn = new_conn(&db_name)?;
+    init_guild_db(&mut conn)?;
+    Ok(conn)
+}
+
+pub fn init_guild_db(conn: &mut Connection) -> Result<()> {
+    run_migrations(conn, None)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO guild_config DEFAULT VALUES;",
+        NO_PARAMS
+    )?;
+    Ok(())
 }
 
 pub static MIGRATIONS: Lazy<Vec<String>> = Lazy::new(
@@ -153,7 +164,7 @@ pub fn run_migrations(conn: &mut Connection, until: Option<DatabaseVersion>) -> 
         "PRAGMA user_version;",
         NO_PARAMS,
         |r| r.get(0),
-    ).map(|i: u32| DatabaseVersion::from(i))?;
+    ).map(|i: i32| DatabaseVersion::from(i))?;
 
     if ver > *DB_VERSION {
         return Err(DatabaseError::TooNew);
@@ -172,7 +183,7 @@ pub fn run_migrations(conn: &mut Connection, until: Option<DatabaseVersion>) -> 
 
 fn run_migration(idx: u32, t: &Transaction) -> Result<()> {
     let migration = &MIGRATIONS[idx as usize];
-    info!("Applying migration {}...", migration);
+    debug!("Applying migration {}...", migration);
 
     let mig_sql = Migrations::get(migration).map(string_from_cow).unwrap();
     t.execute_batch(
