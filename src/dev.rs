@@ -39,7 +39,7 @@ pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
 
 fn create_dummy_db(gid: GuildId) -> db::Result<Connection> {
     info!("Creating db for guild id {} in current directory.", gid);
-    let mut conn = ensure_guild_db("./", gid)?;
+    let conn = ensure_guild_db("./", gid)?;
     info!("Done!");
     Ok(conn)
 }
