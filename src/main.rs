@@ -23,8 +23,8 @@ fn main() -> Fallible<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
     env_logger::init();
-    let token = std::env::var("GLIMBOT_TOKEN")?;
-    let owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
+    let _token = std::env::var("GLIMBOT_TOKEN")?;
+    let _owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
 
     // Create our working directory
     let data_dir = data_folder();
@@ -34,6 +34,8 @@ fn main() -> Fallible<()> {
 
     #[cfg(feature="development")]
     subcommands.push(dev::command_parser());
+
+    subcommands.push(db::args::command_parser());
 
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -45,6 +47,8 @@ fn main() -> Fallible<()> {
 
     #[cfg(feature="development")]
     dev::handle_matches(&matches)?;
+
+    db::args::handle_matches(&matches)?;
 
     Ok(())
 }

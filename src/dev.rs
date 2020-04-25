@@ -2,7 +2,7 @@ use clap::{App, SubCommand, ArgMatches, Arg, AppSettings};
 use serenity::model::id::GuildId;
 use rusqlite::Connection;
 use failure::Fallible;
-use crate::db::{ensure_guild_db, run_migrations, get_db_version, DB_VERSION};
+use crate::db::{ensure_guild_db, init_guild_db};
 use crate::db;
 
 pub fn command_parser() -> App<'static, 'static> {
@@ -39,7 +39,8 @@ pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
 
 fn create_dummy_db(gid: GuildId) -> db::Result<Connection> {
     info!("Creating db for guild id {} in current directory.", gid);
-    let conn = ensure_guild_db("./", gid)?;
+    let mut conn = ensure_guild_db("./", gid)?;
+    init_guild_db(&mut conn)?;
     info!("Done!");
     Ok(conn)
 }

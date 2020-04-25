@@ -13,13 +13,13 @@ use std::io;
 use rusqlite::Connection;
 
 pub fn data_folder() -> PathBuf {
-    let mut path = std::env::var("GLIMBOT_DIR")
+    let path = std::env::var("GLIMBOT_DIR")
         .map_or_else(|_| default_folder(),
                      PathBuf::from);
     path
 }
 
-pub fn default_folder() -> PathBuf {
+fn default_folder() -> PathBuf {
     let mut base = dirs::data_dir().expect("Running on an unsupported platform.");
     base.push("glimbot");
     base

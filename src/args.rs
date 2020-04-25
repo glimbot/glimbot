@@ -1,5 +1,4 @@
 use clap::{App, ArgMatches};
-use failure::Fail;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
