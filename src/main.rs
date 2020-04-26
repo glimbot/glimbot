@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
+#![deny(unused_imports)]
+
+//! Glimbot is a general admin and anti-spam bot for Discord, written in Rust.
+//! The primary design goal is to create a robust Discord bot with high performance to
+//! manage large servers in the spirit of SweetieBot.
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate rusqlite;

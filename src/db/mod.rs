@@ -1,22 +1,18 @@
+//! This crate contains functionality related to the databases created for each guild.
+
 use std::path::{PathBuf, Path};
 use serenity::model::prelude::GuildId;
 use std::io;
-use rusqlite::{Connection, OpenFlags, Statement, NO_PARAMS, TransactionBehavior, Transaction, ToSql};
-use std::sync::Arc;
-use parking_lot::{Mutex, RwLock};
+use rusqlite::{Connection, OpenFlags, NO_PARAMS, TransactionBehavior, Transaction,};
 use crate::data::Resources;
-use failure::Fail;
 use serenity::model::id::UserId;
-use chrono::{NaiveDateTime, Utc, DateTime};
+use chrono::{Utc, DateTime};
 use once_cell::sync::Lazy;
-use std::borrow::Cow;
 use crate::util::string_from_cow;
 use itertools::Itertools;
-use failure::_core::cmp::Ordering;
-use failure::_core::convert::TryFrom;
+use std::cmp::Ordering;
 use std::num::ParseIntError;
 use std::fmt::Display;
-use failure::_core::fmt::Formatter;
 
 pub mod args;
 

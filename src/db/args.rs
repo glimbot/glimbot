@@ -1,9 +1,10 @@
-use clap::{App, SubCommand, Arg, AppSettings, ArgMatches};
-use crate::db::{DB_VERSION, DatabaseVersion, DB_VERSION_STRING, DatabaseError, migrate_to, ensure_guild_db, new_conn, get_db_version, upgrade, downgrade};
-use failure::{Fallible, err_msg};
-use std::convert::TryFrom;
-use itertools::Itertools;
+//!
 
+use clap::{App, SubCommand, Arg, AppSettings, ArgMatches};
+use crate::db::{DatabaseVersion, DB_VERSION_STRING, new_conn, get_db_version, upgrade, downgrade};
+use failure::{Fallible};
+
+#[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
     let arg = Arg::with_name("dbs")
         .multiple(true)
@@ -41,6 +42,7 @@ pub fn command_parser() -> App<'static, 'static> {
         .setting(AppSettings::SubcommandRequiredElseHelp)
 }
 
+#[doc(hidden)]
 pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
     if let ("db", Some(m)) = m.subcommand() {
         match m.subcommand() {
