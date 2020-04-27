@@ -1,3 +1,19 @@
+//  Glimbot - A Discord anti-spam and administration bot.
+//  Copyright (C) 2020 Nick Samson
+
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 #![deny(unused_imports)]
@@ -23,13 +39,15 @@ pub mod util;
 pub mod dev;
 
 pub mod args;
+pub mod dispatch;
 
 fn main() -> Fallible<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
     env_logger::init();
-    let _token = std::env::var("GLIMBOT_TOKEN")?;
-    let _owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
+    // TODO: Move this to the code that's actually running the bot. Not every command needs these.
+    // let _token = std::env::var("GLIMBOT_TOKEN")?;
+    // let _owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
 
     // Create our working directory
     let data_dir = data_folder();

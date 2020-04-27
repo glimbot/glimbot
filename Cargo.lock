@@ -627,6 +627,7 @@ dependencies = [
  "itertools",
  "lock_api",
  "log",
+ "lru-cache",
  "nom 5.1.1",
  "num",
  "once_cell",

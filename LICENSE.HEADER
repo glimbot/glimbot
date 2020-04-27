@@ -13,8 +13,3 @@
 
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-use std::borrow::Cow;
-
-pub fn string_from_cow(s: Cow<'static, [u8]>) -> String {
-    String::from_utf8(s.into_owned()).unwrap()
-}

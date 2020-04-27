@@ -1,0 +1,5 @@
+Any source files missing the GPLv3+ header, including the SQL files, are intended to be released under GPLv3+. The header
+was omitted in certain cases due to the files being embedded in the generated executable.
+
+In the case of documentation files, they are and are intended to be released under the CC-BY-SA 4.0 license,
+available at https://creativecommons.org/licenses/by-sa/4.0/legalcode

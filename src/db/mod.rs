@@ -1,10 +1,26 @@
+//  Glimbot - A Discord anti-spam and administration bot.
+//  Copyright (C) 2020 Nick Samson
+
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 //! This crate contains functionality related to the databases created for each guild.
 
 use std::path::{PathBuf, Path};
 use serenity::model::prelude::GuildId;
 use std::io;
 use rusqlite::{Connection, OpenFlags, NO_PARAMS, TransactionBehavior, Transaction,};
-use crate::data::Resources;
+use crate::data::{Resources, data_folder};
 use serenity::model::id::UserId;
 use chrono::{Utc, DateTime};
 use once_cell::sync::Lazy;
@@ -15,6 +31,7 @@ use std::num::ParseIntError;
 use std::fmt::Display;
 
 pub mod args;
+pub mod cache;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DatabaseError {
@@ -179,6 +196,11 @@ pub fn ensure_guild_db(data_dir: impl Into<PathBuf>, g: GuildId) -> Result<rusql
     db_name.push(format!("{}.sqlite3", g));
     let conn = new_conn(&db_name)?;
     Ok(conn)
+}
+
+pub fn ensure_guild_db_in_data_dir(g: GuildId) -> Result<rusqlite::Connection> {
+    let data_dir = data_folder();
+    ensure_guild_db(data_dir, g)
 }
 
 pub fn init_guild_db(conn: &mut Connection) -> Result<()> {

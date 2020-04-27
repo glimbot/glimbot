@@ -14,26 +14,19 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use clap::{App, ArgMatches};
+use serenity::prelude::EventHandler;
 
-#[derive(thiserror::Error, Debug)]
-pub enum ParseError {
-    #[error("{0}")]
-    Clap(#[from] clap::Error),
-    #[error("An error occurred while parsing the arguments string: {0}")]
-    Splitter(#[from] shell_words::ParseError),
+pub struct Dispatch {
+
 }
 
-pub type Result<T> = std::result::Result<T, ParseError>;
+impl EventHandler for Dispatch {
 
-static DUMMY: [&'static str; 1] = ["dummy"];
+}
 
-pub fn parse_app_matches<'a, 'b>(s: impl AsRef<str>, a: &App<'a, 'b>) -> Result<ArgMatches<'a>> {
-    let s = s.as_ref();
-    let parts = shell_words::split(s)?;
-    let app = a.clone();
-    let matches = app.get_matches_from_safe(
-        DUMMY.iter().cloned()
-            .chain(parts.iter().map(|s| s.as_str())))?;
-    Ok(matches)
+impl Dispatch {
+    pub fn new() -> Self {
+        Dispatch {
+        }
+    }
 }
