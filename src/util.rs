@@ -14,7 +14,20 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use std::borrow::Cow;
+use std::error::Error;
 
 pub fn string_from_cow(s: Cow<'static, [u8]>) -> String {
     String::from_utf8(s.into_owned()).unwrap()
+}
+
+pub trait LogErrorExt<E: Error> {
+    fn log_error(&self);
+}
+
+impl<T, E: Error> LogErrorExt<E> for Result<T, E> {
+    fn log_error(&self) {
+        if let Err(e) = self {
+            error!("{}", e)
+        }
+    }
 }

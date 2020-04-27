@@ -21,11 +21,11 @@ use rusqlite::Connection;
 use std::cell::RefCell;
 use serenity::model::prelude::GuildId;
 use std::rc::Rc;
-use crate::db::{ensure_guild_db_in_data_dir};
+use crate::db::{ensure_guild_db_in_data_dir, init_guild_db};
 
 pub static NUM_CACHED_CONNECTIONS: Lazy<usize> = Lazy::new(
     || std::env::var("GLIMBOT_DB_CONN_PER_THREAD")
-        .unwrap_or_else(|_| "16".to_string())
+        .unwrap_or_else(|_| "64".to_string())
         .parse::<usize>()
         .expect("GLIMBOT_DB_CONN_PER_THREAD must be a valid usize.")
 );
@@ -42,16 +42,22 @@ pub fn get_cached_connection(g: GuildId) -> super::Result<Rc<RefCell<Connection>
             let mut cache_ref = cache.borrow_mut();
             match cache_ref.get_mut(&g) {
                 None => {
+                    trace!("Cache miss for guild {}", g);
+                    let mut c = ensure_guild_db_in_data_dir(g)?;
+                    init_guild_db(&mut c)?;
                     let out = Rc::new(
                         RefCell::new(
-                            ensure_guild_db_in_data_dir(g)?
+                            c
                         )
                     );
 
                     cache_ref.insert(g, out.clone());
                     Ok(out)
                 },
-                Some(rc) => {Ok(rc.clone())},
+                Some(rc) => {
+                    trace!("Cache hit for guild {}", g);
+                    Ok(rc.clone())
+                },
             }
         }
     )

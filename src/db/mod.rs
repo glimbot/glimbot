@@ -192,6 +192,7 @@ pub fn new_conn(p: impl AsRef<Path>) -> Result<rusqlite::Connection> {
 
 
 pub fn ensure_guild_db(data_dir: impl Into<PathBuf>, g: GuildId) -> Result<rusqlite::Connection> {
+    trace!("Encountered guild {}", g);
     let mut db_name = data_dir.into();
     db_name.push(format!("{}.sqlite3", g));
     let conn = new_conn(&db_name)?;
@@ -240,6 +241,14 @@ pub fn upgrade(conn: &mut Connection, until: Option<DatabaseVersion>) -> Result<
     // Migrations should be run offline.
 
     let until = until.unwrap_or(*DB_VERSION).min(*DB_VERSION);
+    // Check before we have to grab an exclusive lock.
+    let ver = get_db_version(conn)?;
+
+    if ver > *DB_VERSION {
+        return Err(DatabaseError::TooNew);
+    } else if ver == *DB_VERSION {
+        return Ok(());
+    }
 
     let trans = conn.transaction_with_behavior(TransactionBehavior::Exclusive)?; // TRAAAAAAAAAAAAAANS
     let ver = trans.query_row(

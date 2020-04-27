@@ -14,14 +14,25 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use serenity::prelude::EventHandler;
+use serenity::prelude::{EventHandler, Context};
+use serenity::model::gateway::{Ready, Activity};
+use crate::util::LogErrorExt;
+use crate::db::cache::get_cached_connection;
+
+pub mod args;
 
 pub struct Dispatch {
 
 }
 
 impl EventHandler for Dispatch {
-
+    fn ready(&self, ctx: Context, data_about_bot: Ready) {
+        ctx.set_activity(Activity::playing("Cultist Simulator"));
+        let active_guilds = &data_about_bot.guilds;
+        active_guilds.iter().for_each(
+            |g| get_cached_connection(g.id()).log_error()
+        )
+    }
 }
 
 impl Dispatch {

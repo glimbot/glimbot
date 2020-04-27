@@ -45,9 +45,6 @@ fn main() -> Fallible<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
     env_logger::init();
-    // TODO: Move this to the code that's actually running the bot. Not every command needs these.
-    // let _token = std::env::var("GLIMBOT_TOKEN")?;
-    // let _owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
 
     // Create our working directory
     let data_dir = data_folder();
@@ -59,6 +56,7 @@ fn main() -> Fallible<()> {
     subcommands.push(dev::command_parser());
 
     subcommands.push(db::args::command_parser());
+    subcommands.push(dispatch::args::command_parser());
 
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -72,6 +70,7 @@ fn main() -> Fallible<()> {
     dev::handle_matches(&matches)?;
 
     db::args::handle_matches(&matches)?;
+    dispatch::args::handle_matches(&matches)?;
 
     Ok(())
 }
