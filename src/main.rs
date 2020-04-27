@@ -22,14 +22,21 @@
 //! The primary design goal is to create a robust Discord bot with high performance to
 //! manage large servers in the spirit of SweetieBot.
 
-#[macro_use] extern crate log;
-#[macro_use] extern crate rusqlite;
+
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate rusqlite;
 
 use std::env;
 use std::path::Path;
 use crate::data::{data_folder, AUTHORS, VERSION};
-use clap::{App, AppSettings};
+use clap::{App, AppSettings, Arg};
 use failure::Fallible;
+use log4rs::config::{Config, Appender, Logger, Root};
+use log4rs::append::console::ConsoleAppender;
+use log::LevelFilter;
+use log4rs::encode::pattern::PatternEncoder;
 
 pub mod data;
 pub mod db;
@@ -44,7 +51,6 @@ pub mod dispatch;
 fn main() -> Fallible<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
-    env_logger::init();
 
     // Create our working directory
     let data_dir = data_folder();
@@ -52,8 +58,8 @@ fn main() -> Fallible<()> {
 
     let mut subcommands = vec![];
 
-    #[cfg(feature="development")]
-    subcommands.push(dev::command_parser());
+    #[cfg(feature = "development")]
+        subcommands.push(dev::command_parser());
 
     subcommands.push(db::args::command_parser());
     subcommands.push(dispatch::args::command_parser());
@@ -63,11 +69,25 @@ fn main() -> Fallible<()> {
         .author(AUTHORS)
         .version(VERSION)
         .subcommands(subcommands)
+        .arg(Arg::with_name("verbosity")
+            .short("v")
+            .multiple(true)
+            .help("Sets the logging verbosity level. Default: INFO")
+        )
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .get_matches();
 
-    #[cfg(feature="development")]
-    dev::handle_matches(&matches)?;
+    let verbosity = match matches.occurrences_of("verbosity") {
+        0 => LevelFilter::Info,
+        1 => LevelFilter::Debug,
+        i if i >= 2 => LevelFilter::Trace,
+        _ => unreachable!()
+    };
+
+    init_logging(verbosity)?;
+
+    #[cfg(feature = "development")]
+        dev::handle_matches(&matches)?;
 
     db::args::handle_matches(&matches)?;
     dispatch::args::handle_matches(&matches)?;
@@ -77,4 +97,22 @@ fn main() -> Fallible<()> {
 
 fn ensure_data_folder(p: impl AsRef<Path>) {
     std::fs::create_dir_all(p).expect("Couldn't create the path to default directory.");
+}
+
+
+fn init_logging(l: LevelFilter) -> Fallible<()> {
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(
+            PatternEncoder::new("[{d(%s%.3f)(utc)}][{h({l:<5})}][{M}][{I}]  {m}{n}")
+        ))
+        .build();
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .logger(Logger::builder().build("glimbot", l))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
+
+    log4rs::init_config(config)?;
+
+    Ok(())
 }
