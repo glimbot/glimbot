@@ -635,6 +635,7 @@ dependencies = [
  "serde_yaml",
  "serenity",
  "shell-words",
+ "shellexpand",
  "tempdir",
  "thiserror",
  "typemap",

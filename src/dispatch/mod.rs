@@ -18,11 +18,13 @@ use serenity::prelude::{EventHandler, Context};
 use serenity::model::gateway::{Ready, Activity};
 use crate::util::LogErrorExt;
 use crate::db::cache::get_cached_connection;
+use serenity::model::prelude::UserId;
+use std::sync::atomic::AtomicU64;
 
 pub mod args;
 
 pub struct Dispatch {
-
+    owner: AtomicU64
 }
 
 impl EventHandler for Dispatch {
@@ -31,13 +33,17 @@ impl EventHandler for Dispatch {
         let active_guilds = &data_about_bot.guilds;
         active_guilds.iter().for_each(
             |g| get_cached_connection(g.id()).log_error()
-        )
+        );
+
+
+        info!("Glimbot is up and running in at least {} servers.", active_guilds.len());
     }
 }
 
 impl Dispatch {
-    pub fn new() -> Self {
+    pub fn new(owner: UserId) -> Self {
         Dispatch {
+            owner: AtomicU64::new(*owner.as_u64())
         }
     }
 }

@@ -52,10 +52,6 @@ fn main() -> Fallible<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
 
-    // Create our working directory
-    let data_dir = data_folder();
-    ensure_data_folder(&data_dir);
-
     let mut subcommands = vec![];
 
     #[cfg(feature = "development")]
@@ -85,6 +81,9 @@ fn main() -> Fallible<()> {
     };
 
     init_logging(verbosity)?;
+    // Create our working directory
+    let data_dir = data_folder();
+    ensure_data_folder(&data_dir);
 
     #[cfg(feature = "development")]
         dev::handle_matches(&matches)?;

@@ -30,14 +30,26 @@ use rust_embed::RustEmbed;
 pub struct Resources;
 
 use dirs;
-use std::path::{PathBuf};
+use std::path::{PathBuf, Path};
+use failure::Error as FErr;
+use std::ops::Deref;
+use once_cell::sync::OnceCell;
+
 
 /// Grabs either the current data folder path from GLIMBOT_DIR
-pub fn data_folder() -> PathBuf {
-    let path = std::env::var("GLIMBOT_DIR")
-        .map_or_else(|_| default_folder(),
-                     PathBuf::from);
-    path
+pub fn data_folder() -> &'static Path {
+
+    static DATA_FOLDER: OnceCell<PathBuf> = OnceCell::new();
+
+    &DATA_FOLDER.get_or_init(|| {
+        let path = std::env::var("GLIMBOT_DIR")
+            .map_err(FErr::from)
+            .and_then(|s| shellexpand::full(&s).map_err(FErr::from).map(|x|x.into_owned()))
+            .map_or_else(|_| default_folder(), |c| PathBuf::from(c.deref()));
+        trace!("Data directory is {}", path.to_str().unwrap_or("<unk>"));
+        path
+    })
+
 }
 
 /// Gets the default data folder for applications on the platform.
