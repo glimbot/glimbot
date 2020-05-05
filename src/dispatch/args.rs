@@ -1,5 +1,5 @@
 use clap::{App, SubCommand, ArgMatches};
-use failure::Fallible;
+use crate::util::Fallible;
 use serenity::Client;
 
 pub fn command_parser() -> App<'static, 'static> {

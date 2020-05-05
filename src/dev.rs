@@ -17,7 +17,7 @@
 use clap::{App, SubCommand, ArgMatches, Arg, AppSettings};
 use serenity::model::id::GuildId;
 use rusqlite::Connection;
-use failure::Fallible;
+use crate::util::Fallible;
 use crate::db::{ensure_guild_db, init_guild_db};
 use crate::db;
 

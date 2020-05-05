@@ -31,7 +31,7 @@ pub struct Resources;
 
 use dirs;
 use std::path::{PathBuf, Path};
-use failure::Error as FErr;
+use anyhow::Error as FErr;
 use std::ops::Deref;
 use once_cell::sync::OnceCell;
 

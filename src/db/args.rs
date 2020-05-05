@@ -18,7 +18,7 @@
 
 use clap::{App, SubCommand, Arg, AppSettings, ArgMatches};
 use crate::db::{DatabaseVersion, DB_VERSION_STRING, new_conn, get_db_version, upgrade, downgrade};
-use failure::{Fallible};
+use crate::util::Fallible;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
