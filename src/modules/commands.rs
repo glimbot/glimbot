@@ -15,3 +15,25 @@
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Contains functionality related to processing commands from users.
+
+use crate::dispatch::Dispatch;
+use serenity::model::id::UserId;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("User {0} is not authorized to perform that action.")]
+    InsufficientUserPerms(UserId),
+    #[error("Glimbot is missing required permissions to perform that action.")]
+    InsufficientBotPerms,
+    #[error("{0}")]
+    RuntimeFailure(#[from] anyhow::Error),
+    #[error("An unspecified error occurred while performing the action.")]
+    Other
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub trait Command : Send + Sync {
+    fn name(&self) -> &str;
+    fn invoke(&self, disp: &Dispatch, args: String) -> Result<()>;
+}

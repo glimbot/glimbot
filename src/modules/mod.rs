@@ -18,4 +18,12 @@
 //! Modules represent functionality for Glimbot, and will generally either process events from the server,
 //! process commands from users, or some combination of the two.
 
+use crate::modules::commands::Command;
+use std::sync::Arc;
+
 pub mod commands;
+
+pub struct Module {
+    name: String,
+    command_handler: Option<Arc<dyn Command>>
+}
