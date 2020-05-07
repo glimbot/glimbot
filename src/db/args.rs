@@ -14,7 +14,7 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//!
+//! Module for processing command-line invocations related to database operations.
 
 use clap::{App, SubCommand, Arg, AppSettings, ArgMatches};
 use crate::db::{DatabaseVersion, DB_VERSION_STRING, new_conn, get_db_version, upgrade, downgrade};

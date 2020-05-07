@@ -14,8 +14,12 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Contains functionality related to parsing of commands.
+//! This module and its functionality are deprecated in favor of [modules][crate::modules]
+
 use clap::{App, ArgMatches};
 
+#[doc(hidden)]
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
     #[error("{0}")]
@@ -24,10 +28,12 @@ pub enum ParseError {
     Splitter(#[from] shell_words::ParseError),
 }
 
+#[doc(hidden)]
 pub type Result<T> = std::result::Result<T, ParseError>;
 
 static DUMMY: [&'static str; 1] = ["dummy"];
 
+#[doc(hidden)]
 pub fn parse_app_matches<'a, 'b>(s: impl AsRef<str>, a: &App<'a, 'b>) -> Result<ArgMatches<'a>> {
     let s = s.as_ref();
     let parts = shell_words::split(s)?;

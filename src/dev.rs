@@ -14,6 +14,8 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Contains functions related to developer-related functionality of Glimbot.
+
 use clap::{App, SubCommand, ArgMatches, Arg, AppSettings};
 use serenity::model::id::GuildId;
 use rusqlite::Connection;
@@ -21,6 +23,7 @@ use crate::util::Fallible;
 use crate::db::{ensure_guild_db, init_guild_db};
 use crate::db;
 
+#[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
     trace!("Generating test command parser.");
     SubCommand::with_name("dev")
@@ -38,6 +41,7 @@ pub fn command_parser() -> App<'static, 'static> {
         .setting(AppSettings::SubcommandRequiredElseHelp)
 }
 
+#[doc(hidden)]
 pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
     if let ("dev", Some(m)) = m.subcommand() {
         match m.subcommand() {

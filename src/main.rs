@@ -15,6 +15,7 @@
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 #![allow(dead_code)]
 #![deny(unused_imports)]
 

@@ -14,13 +14,13 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! This crate contains functionality related to the databases created for each guild.
+//! This module contains functionality related to the databases created for each guild.
 
 use std::path::{PathBuf, Path};
 use serenity::model::prelude::GuildId;
 use std::io;
 use rusqlite::{Connection, OpenFlags, NO_PARAMS, TransactionBehavior, Transaction,};
-use crate::data::{Resources, data_folder};
+use crate::data::{Resources, Migrations, data_folder};
 use serenity::model::id::UserId;
 use chrono::{Utc, DateTime};
 use once_cell::sync::Lazy;
@@ -33,19 +33,27 @@ use std::fmt::Display;
 pub mod args;
 pub mod cache;
 
+/// Errors related to database I/O
 #[derive(thiserror::Error, Debug)]
 pub enum DatabaseError {
+    /// Created if an underlying file I/O issue occurs, e.g. ENOENT
     #[error("An I/O error occurred: {0}")]
     IOError(#[from] io::Error),
+    /// Created if the SQL failed, probably a constraint violation in this case.
     #[error("A SQL error occurred: {0}")]
     SQLError(#[from] rusqlite::Error),
+    /// The database that operations were attempted on is too new for this version of glimbot to open.
+    /// If you see this error, you will need a newer version of Glimbot to be able to reverse the migration.
     #[error("Database from a newer version of glimbot.")]
     TooNew,
 }
 
+/// A struct representing the value of the user_version field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord)]
 pub enum DatabaseVersion {
+    /// The database is uninitialized (INITIALIZE_MASK not set)
     Uninitialized,
+    /// The version of the database. Version numbers start at 0 and increment with each new migration.
     Version(u32),
 }
 
@@ -81,9 +89,12 @@ impl Display for DatabaseVersion {
 
 
 impl DatabaseVersion {
+    /// Bitmask for initialization bit. If set, the db is assumed to be initialized.
     pub const INITIALIZE_MASK: u32 = (1 << 31);
+    /// Bitmask for version num. See enum docs for more info.
     pub const VERSION_MASK: u32 = std::u32::MAX & (!Self::INITIALIZE_MASK);
 
+    /// Returns the version number of the migration that would follow this version.
     pub fn next_migration(&self) -> u32 {
         match self {
             DatabaseVersion::Uninitialized => { 0 }
@@ -91,6 +102,7 @@ impl DatabaseVersion {
         }
     }
 
+    /// The version number if initialized, otherwise None.
     pub fn version(&self) -> Option<u32> {
         match self {
             DatabaseVersion::Uninitialized => {None},
@@ -98,10 +110,12 @@ impl DatabaseVersion {
         }
     }
 
+    /// The index into the downgrades list to revert this version of the database.
     pub fn next_revert(&self) -> Option<u32> {
         self.version()
     }
 
+    /// The version the database would be if a reversion were applied.
     pub fn next_downgrade_ver(&self) -> Option<DatabaseVersion> {
         match self {
             DatabaseVersion::Uninitialized => {None},
@@ -161,12 +175,12 @@ impl std::convert::TryFrom<String> for DatabaseVersion {
     }
 }
 
-#[derive(rust_embed::RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/migrations/"]
-pub struct Migrations;
 
+///
 pub type Result<T> = std::result::Result<T, DatabaseError>;
 
+/// Creates a connection to a guild database and runs the prelude statements through.
+/// Prelude statements set up the busy handler, cache settings, WAL mode, etc.
 pub fn new_conn(p: impl AsRef<Path>) -> Result<rusqlite::Connection> {
     let db = Connection::open_with_flags(
         p,
@@ -190,7 +204,8 @@ pub fn new_conn(p: impl AsRef<Path>) -> Result<rusqlite::Connection> {
     Ok(db)
 }
 
-
+/// Opens or creates a guild database in the specified directory.
+/// Does not initialize the guild! Call init_guild_db to ensure initialization is complete.
 pub fn ensure_guild_db(data_dir: impl Into<PathBuf>, g: GuildId) -> Result<rusqlite::Connection> {
     trace!("Encountered guild {}", g);
     let mut db_name = data_dir.into();
@@ -199,11 +214,13 @@ pub fn ensure_guild_db(data_dir: impl Into<PathBuf>, g: GuildId) -> Result<rusql
     Ok(conn)
 }
 
+/// Creates a guild database inside the data folder. See [ensure_guild_db] for more info.
 pub fn ensure_guild_db_in_data_dir(g: GuildId) -> Result<rusqlite::Connection> {
     let data_dir = data_folder();
     ensure_guild_db(data_dir, g)
 }
 
+/// Updates a guild database to the latest version, then ensures the guild configuration is initialized.
 pub fn init_guild_db(conn: &mut Connection) -> Result<()> {
     upgrade(conn, None)?;
     conn.execute(
@@ -213,6 +230,9 @@ pub fn init_guild_db(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+/// The names of the migration files for upgrading guild databases, sorted in ascending order of version.
+/// Apply in order to upgrade a database.
+/// Each migration is idempotent.
 pub static MIGRATIONS: Lazy<Vec<String>> = Lazy::new(
     || Migrations::iter()
         .map(String::from)
@@ -221,6 +241,9 @@ pub static MIGRATIONS: Lazy<Vec<String>> = Lazy::new(
         .collect()
 );
 
+/// The names of migration files for downgrading guild databases, sorted in ascending order of version.
+/// Apply in reverse order to downgrade a database.
+/// Each migration is idempotent.
 pub static REVERTS: Lazy<Vec<String>> = Lazy::new(
     || Migrations::iter()
         .map(String::from)
@@ -229,14 +252,19 @@ pub static REVERTS: Lazy<Vec<String>> = Lazy::new(
         .collect()
 );
 
+/// The latest version of guild databases this build of Glimbot supports.
 pub static DB_VERSION: Lazy<DatabaseVersion> = Lazy::new(
     || DatabaseVersion::Version((MIGRATIONS.len().saturating_sub(1)) as u32)
 );
 
+/// [DB_VERSION] as a String.
 pub static DB_VERSION_STRING: Lazy<String> = Lazy::new(
     || DB_VERSION.to_string()
 );
 
+
+/// Upgrades a database connection to the latest version or the version specified in `until`.
+/// This will either apply all available upgrades between the two versions or none of them.
 pub fn upgrade(conn: &mut Connection, until: Option<DatabaseVersion>) -> Result<()> {
     // Migrations should be run offline.
 
@@ -272,6 +300,8 @@ pub fn upgrade(conn: &mut Connection, until: Option<DatabaseVersion>) -> Result<
     Ok(())
 }
 
+/// Migrates the connected database to the specified version, up or down.
+/// Prefer using [upgrade] or [downgrade] directly.
 pub fn migrate_to(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
     let ver = get_db_version(conn)?;
     if ver < when {
@@ -282,6 +312,7 @@ pub fn migrate_to(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
     Ok(())
 }
 
+/// Downgrades the connected database to the specified version.
 pub fn downgrade(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
 
     let trans = conn.transaction_with_behavior(TransactionBehavior::Exclusive)?; // TRAAAAAAAAAAAAAANS
@@ -313,6 +344,7 @@ pub fn downgrade(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
     Ok(())
 }
 
+/// Applies a single downgrade to the database connected to the specified [Transaction].
 fn run_upgrade(idx: u32, t: &Transaction) -> Result<()> {
     let migration = &MIGRATIONS[idx as usize];
     debug!("Applying migration {}...", migration);
@@ -352,6 +384,8 @@ fn run_downgrade(idx: u32, t: &Transaction) -> Result<()> {
         .map(|_| ())
 }
 
+/// Grabs the user pressure generated since the specified time in the guild database specified by the
+/// [Connection]
 pub fn user_pressure(since: &DateTime<Utc>, u: UserId, conn: &Connection) -> Result<i64> {
     let uid = u.0 as i64;
     let ts = since.naive_utc().timestamp();
@@ -371,6 +405,7 @@ pub fn user_pressure(since: &DateTime<Utc>, u: UserId, conn: &Connection) -> Res
     ).map_err(DatabaseError::from)
 }
 
+/// Retrieves the current database version from a guild database.
 pub fn get_db_version(conn: &Connection) -> Result<DatabaseVersion> {
     let v = conn.query_row(
         "PRAGMA user_version;",

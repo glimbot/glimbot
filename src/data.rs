@@ -14,6 +14,8 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(missing_docs)]
+
 //! This module contains strings, resources, and other functions related to
 //! importation and management of the data infrastructure for Glimbot.
 
@@ -29,12 +31,15 @@ use rust_embed::RustEmbed;
 /// Embedded resources (mostly SQL files).
 pub struct Resources;
 
+#[derive(rust_embed::RustEmbed)]
+#[folder = "$CARGO_MANIFEST_DIR/migrations/"]
+pub struct Migrations;
+
 use dirs;
 use std::path::{PathBuf, Path};
 use anyhow::Error as FErr;
 use std::ops::Deref;
 use once_cell::sync::OnceCell;
-
 
 /// Grabs either the current data folder path from GLIMBOT_DIR
 pub fn data_folder() -> &'static Path {

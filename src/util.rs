@@ -13,16 +13,25 @@
 
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+//! Contains utility types and functions related to common functionality which would otherwise
+//! be in a module by itself.
 use std::borrow::Cow;
 use std::error::Error;
 
+/// Patch type to reflect removal of `failure` crate.
 pub type Fallible<T> = anyhow::Result<T>;
 
+/// Converts a string into a [Cow], unwrapping the result.
+/// # Panics
+/// If the given string is not valid UTF-8
 pub fn string_from_cow(s: Cow<'static, [u8]>) -> String {
     String::from_utf8(s.into_owned()).unwrap()
 }
 
+/// A generic extension for result types that logs the error in a result if present.
 pub trait LogErrorExt<E: Error> {
+    /// Logs an error for this type.
     fn log_error(&self);
 }
 

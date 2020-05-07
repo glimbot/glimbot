@@ -14,6 +14,9 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Contains functionality related to the maintenance of per-thread database connection caching.
+//! Controlled through the environment variable `GLIMBOT_DB_CONN_PER_THREAD`, which defaults to 64.
+
 use once_cell::sync::Lazy;
 use once_cell::unsync::Lazy as UnsyncLazy;
 use lru_cache::LruCache;
@@ -23,6 +26,8 @@ use serenity::model::prelude::GuildId;
 use std::rc::Rc;
 use crate::db::{ensure_guild_db_in_data_dir, init_guild_db};
 
+/// The maximum number of connections that will live in each thread's cache.
+/// Cache eviction follows LRU strategy.
 pub static NUM_CACHED_CONNECTIONS: Lazy<usize> = Lazy::new(
     || std::env::var("GLIMBOT_DB_CONN_PER_THREAD")
         .unwrap_or_else(|_| "64".to_string())
@@ -36,6 +41,8 @@ thread_local! {
     );
 }
 
+/// Retrieves a cached connection from the calling thread's cache, creating and/or migrating
+/// the database if necessary.
 pub fn get_cached_connection(g: GuildId) -> super::Result<Rc<RefCell<Connection>>> {
     CONNECTION_CACHE.with(
         |cache| {

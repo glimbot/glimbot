@@ -14,6 +14,8 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Contains the primary event handler for Glimbot.
+
 use serenity::prelude::{EventHandler, Context};
 use serenity::model::gateway::{Ready, Activity};
 use crate::util::LogErrorExt;
@@ -23,6 +25,8 @@ use std::sync::atomic::AtomicU64;
 
 pub mod args;
 
+/// The primary event handler for Glimbot. Contains references to transient state for the bot.
+/// Non-transient data should live in the databases.
 pub struct Dispatch {
     owner: AtomicU64
 }
@@ -41,6 +45,7 @@ impl EventHandler for Dispatch {
 }
 
 impl Dispatch {
+    /// Creates a dispatch with the given owner.
     pub fn new(owner: UserId) -> Self {
         Dispatch {
             owner: AtomicU64::new(*owner.as_u64())

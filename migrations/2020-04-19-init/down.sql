@@ -1,3 +1,3 @@
-DROP TABLE messages;
-DROP TABLE users;
-DROP TABLE guild_config;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS guild_config;
