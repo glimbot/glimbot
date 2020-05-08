@@ -20,10 +20,15 @@
 
 use crate::modules::commands::Command;
 use std::sync::Arc;
+use crate::modules::hook::CommandHookFn;
 
 pub mod commands;
+pub mod hook;
 
+/// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
+/// and one or more hooks.
 pub struct Module {
     name: String,
-    command_handler: Option<Arc<dyn Command>>
+    command_handler: Option<Arc<dyn Command>>,
+    command_hooks: Vec<CommandHookFn>
 }

@@ -19,21 +19,29 @@
 use crate::dispatch::Dispatch;
 use serenity::model::id::UserId;
 
+/// Error types for running commands based on user input.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    /// The user did not have permission to perform the specified action.
     #[error("User {0} is not authorized to perform that action.")]
     InsufficientUserPerms(UserId),
+    /// Glimbot did not have sufficient permissions to perform that action.
     #[error("Glimbot is missing required permissions to perform that action.")]
     InsufficientBotPerms,
+    /// The command failed for some other reason unrelated to permissions.
     #[error("{0}")]
     RuntimeFailure(#[from] anyhow::Error),
+    /// The command failed for some reason which should not be revealed to the user.
     #[error("An unspecified error occurred while performing the action.")]
     Other
 }
 
+/// Alias for result of running commands.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The trait from which commands are derived. Each module can have one command, which may have
+/// subcommands as appropriate.
 pub trait Command : Send + Sync {
-    fn name(&self) -> &str;
+    /// The primary entry point for the command.
     fn invoke(&self, disp: &Dispatch, args: String) -> Result<()>;
 }

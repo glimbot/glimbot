@@ -22,13 +22,15 @@ use crate::util::LogErrorExt;
 use crate::db::cache::get_cached_connection;
 use serenity::model::prelude::UserId;
 use std::sync::atomic::AtomicU64;
+use crate::modules::hook::CommandHookFn;
 
 pub mod args;
 
 /// The primary event handler for Glimbot. Contains references to transient state for the bot.
 /// Non-transient data should live in the databases.
 pub struct Dispatch {
-    owner: AtomicU64
+    owner: AtomicU64,
+    command_hooks: Vec<CommandHookFn>
 }
 
 impl EventHandler for Dispatch {
@@ -48,7 +50,8 @@ impl Dispatch {
     /// Creates a dispatch with the given owner.
     pub fn new(owner: UserId) -> Self {
         Dispatch {
-            owner: AtomicU64::new(*owner.as_u64())
+            owner: AtomicU64::new(*owner.as_u64()),
+            command_hooks: Vec::new()
         }
     }
 }
