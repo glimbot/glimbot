@@ -20,23 +20,37 @@ use std::borrow::Cow;
 use crate::dispatch::Dispatch;
 use serenity::prelude::Context;
 use serenity::model::prelude::Message;
+use crate::error::BotError;
 
 /// Errors that can result from the application of a hook.
 #[derive(thiserror::Error, Debug)]
-pub enum Error<'a> {
+pub enum Error {
     /// The user who triggered the event cannot perform this action, for some reason other than needing a role.
     #[error("The action is forbidden.")]
     Denied,
+    /// Denies an action with a reason.
+    #[error("The action is forbidden: {0}")]
+    DeniedWithReason(Cow<'static, str>),
     /// The user needed one of the specified roles (given by name) to perform the action.
     #[error("You need one of these roles to perform that action: {0:?}")]
-    NeedRole(Vec<&'a str>),
+    NeedRole(Vec<String>),
+    /// The command specified does not exist.
+    #[error("Command not found.")]
+    CommandNotFound(String),
     /// The action failed for some backend reason.
-    #[error("Failed while processing event. Contact bot admin.")]
-    Failed
+    #[error("Failed while processing event. {0:?}")]
+    Failed(#[from] anyhow::Error)
 }
 
+impl BotError for Error {
+    fn is_user_error(&self) -> bool {
+        !matches!(self, Error::Failed(_))
+    }
+}
+
+
 /// The hook results alias.
-pub type Result<'a, T> = std::result::Result<T, Error<'a>>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// A function that will be called on every command invocation.
-pub type CommandHookFn = for <'a, 'b, 'c, 'd> fn(&'a Dispatch, &'b Context, &'c Message, Cow<'d, str>) -> Result<'b, Cow<'d, str>>;
+pub type CommandHookFn = for <'a, 'b, 'c, 'd> fn(&'a Dispatch, &'b Context, &'c Message, Cow<'d, str>) -> Result<Cow<'d, str>>;

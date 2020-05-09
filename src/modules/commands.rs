@@ -18,6 +18,10 @@
 
 use crate::dispatch::Dispatch;
 use serenity::model::id::UserId;
+use serenity::client::Context;
+use serenity::model::prelude::Message;
+use std::borrow::Cow;
+use crate::error::BotError;
 
 /// Error types for running commands based on user input.
 #[derive(thiserror::Error, Debug)]
@@ -30,10 +34,16 @@ pub enum Error {
     InsufficientBotPerms,
     /// The command failed for some other reason unrelated to permissions.
     #[error("{0}")]
-    RuntimeFailure(#[from] anyhow::Error),
+    RuntimeFailure(anyhow::Error),
     /// The command failed for some reason which should not be revealed to the user.
     #[error("An unspecified error occurred while performing the action.")]
-    Other
+    Other(#[from] anyhow::Error),
+}
+
+impl BotError for Error {
+    fn is_user_error(&self) -> bool {
+        !matches!(self, Error::Other(_))
+    }
 }
 
 /// Alias for result of running commands.
@@ -41,7 +51,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// The trait from which commands are derived. Each module can have one command, which may have
 /// subcommands as appropriate.
-pub trait Command : Send + Sync {
+pub trait Command: Send + Sync {
     /// The primary entry point for the command.
-    fn invoke(&self, disp: &Dispatch, args: String) -> Result<()>;
+    fn invoke(&self, disp: &Dispatch, ctx: &Context, msg: &Message, args: Cow<str>) -> Result<()>;
+
+    /// Returns a help string for the given command, invoked by the "help" module.
+    fn help(&self) -> Cow<'static, str> {
+        Cow::Borrowed("No help specified.")
+    }
 }

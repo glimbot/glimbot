@@ -17,7 +17,7 @@
 //! Contains utility types and functions related to common functionality which would otherwise
 //! be in a module by itself.
 use std::borrow::Cow;
-use std::error::Error;
+use std::fmt::Display;
 
 /// Patch type to reflect removal of `failure` crate.
 pub type Fallible<T> = anyhow::Result<T>;
@@ -30,12 +30,12 @@ pub fn string_from_cow(s: Cow<'static, [u8]>) -> String {
 }
 
 /// A generic extension for result types that logs the error in a result if present.
-pub trait LogErrorExt<E: Error> {
+pub trait LogErrorExt<E: Display> {
     /// Logs an error for this type.
     fn log_error(&self);
 }
 
-impl<T, E: Error> LogErrorExt<E> for Result<T, E> {
+impl<T, E: Display> LogErrorExt<E> for Result<T, E> {
     fn log_error(&self) {
         if let Err(e) = self {
             error!("{}", e)

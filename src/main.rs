@@ -49,6 +49,7 @@ pub mod dev;
 pub mod args;
 pub mod dispatch;
 pub mod modules;
+pub mod error;
 
 fn main() -> Fallible<()> {
     better_panic::install();

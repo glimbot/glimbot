@@ -24,6 +24,7 @@ use crate::modules::hook::CommandHookFn;
 
 pub mod commands;
 pub mod hook;
+pub mod ping;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
 /// and one or more hooks.
@@ -31,4 +32,43 @@ pub struct Module {
     name: String,
     command_handler: Option<Arc<dyn Command>>,
     command_hooks: Vec<CommandHookFn>
+}
+
+impl Module {
+    /// Creates a new module with the given name.
+    pub fn with_name(name: impl Into<String>) -> Self {
+        Module {
+            name: name.into(),
+            command_hooks: Vec::new(),
+            command_handler: None,
+        }
+    }
+
+    /// Adds a command hook to the current module.
+    pub fn with_command_hook(mut self, f: CommandHookFn) -> Self {
+        self.command_hooks.push(f);
+        self
+    }
+
+    /// Sets the command handler for the current module.
+    pub fn with_command<T: Command + 'static>(mut self, cmd: T) -> Self {
+        let ptr: Arc<dyn Command> = Arc::new(cmd);
+        self.command_handler = Some(ptr);
+        self
+    }
+
+    /// Accessor for the name of the module.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Accessor for the command handler, if any.
+    pub fn command_handler(&self) -> Option<&Arc<dyn Command>> {
+        self.command_handler.as_ref()
+    }
+
+    /// Accessor for any command hooks held in the Module.
+    pub fn command_hooks(&self) -> &[CommandHookFn] {
+        &self.command_hooks
+    }
 }

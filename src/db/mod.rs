@@ -48,6 +48,12 @@ pub enum DatabaseError {
     TooNew,
 }
 
+impl BotError for DatabaseError {
+    fn is_user_error(&self) -> bool {
+        false
+    }
+}
+
 /// A struct representing the value of the user_version field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord)]
 pub enum DatabaseVersion {
@@ -56,6 +62,10 @@ pub enum DatabaseVersion {
     /// The version of the database. Version numbers start at 0 and increment with each new migration.
     Version(u32),
 }
+
+mod guild_conn;
+pub use guild_conn::GuildConn;
+use crate::error::BotError;
 
 impl PartialOrd for DatabaseVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {

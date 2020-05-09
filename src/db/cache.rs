@@ -20,11 +20,11 @@
 use once_cell::sync::Lazy;
 use once_cell::unsync::Lazy as UnsyncLazy;
 use lru_cache::LruCache;
-use rusqlite::Connection;
 use std::cell::RefCell;
 use serenity::model::prelude::GuildId;
 use std::rc::Rc;
-use crate::db::{ensure_guild_db_in_data_dir, init_guild_db};
+use crate::db::{ensure_guild_db_in_data_dir, init_guild_db, GuildConn};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The maximum number of connections that will live in each thread's cache.
 /// Cache eviction follows LRU strategy.
@@ -36,33 +36,38 @@ pub static NUM_CACHED_CONNECTIONS: Lazy<usize> = Lazy::new(
 );
 
 thread_local! {
-    static CONNECTION_CACHE: UnsyncLazy<RefCell<LruCache<GuildId, Rc<RefCell<Connection>>>>> = UnsyncLazy::new(
+    static CONNECTION_CACHE: UnsyncLazy<RefCell<LruCache<GuildId, Rc<RefCell<GuildConn>>>>> = UnsyncLazy::new(
         || RefCell::new(LruCache::new(*NUM_CACHED_CONNECTIONS))
     );
 }
 
+static CACHE_ACCESSES: AtomicUsize = AtomicUsize::new(0);
+static CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
+
 /// Retrieves a cached connection from the calling thread's cache, creating and/or migrating
 /// the database if necessary.
-pub fn get_cached_connection(g: GuildId) -> super::Result<Rc<RefCell<Connection>>> {
+pub fn get_cached_connection(g: GuildId) -> super::Result<Rc<RefCell<GuildConn>>> {
+    let accesses = CACHE_ACCESSES.fetch_add(1, Ordering::SeqCst) + 1;
     CONNECTION_CACHE.with(
         |cache| {
             let mut cache_ref = cache.borrow_mut();
             match cache_ref.get_mut(&g) {
                 None => {
                     trace!("Cache miss for guild {}", g);
-                    let mut c = ensure_guild_db_in_data_dir(g)?;
-                    init_guild_db(&mut c)?;
+                    let mut c = GuildConn::new(ensure_guild_db_in_data_dir(g)?);
+                    init_guild_db(c.as_mut())?;
                     let out = Rc::new(
                         RefCell::new(
                             c
                         )
                     );
-
                     cache_ref.insert(g, out.clone());
                     Ok(out)
                 },
                 Some(rc) => {
                     trace!("Cache hit for guild {}", g);
+                    let hits = CACHE_HITS.fetch_add(1, Ordering::SeqCst) + 1;
+                    trace!("Cache hit {1}/{0} times", accesses, hits);
                     Ok(rc.clone())
                 },
             }
