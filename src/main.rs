@@ -1,121 +1,120 @@
+//  Glimbot - A Discord anti-spam and administration bot.
+//  Copyright (C) 2020 Nick Samson
+
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 #![allow(dead_code)]
+#![deny(unused_imports)]
 
-#[macro_use] extern crate diesel;
-#[macro_use] extern crate log;
-#[macro_use] extern crate diesel_migrations;
+//! Glimbot is a general admin and anti-spam bot for Discord, written in Rust.
+//! The primary design goal is to create a robust Discord bot with high performance to
+//! manage large servers in the spirit of SweetieBot.
 
-use std::fs::File;
+
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate rusqlite;
+
+use std::env;
 use std::path::Path;
-use std::thread;
+use crate::data::{data_folder, AUTHORS, VERSION};
+use clap::{App, AppSettings, Arg};
+use crate::util::Fallible;
+use log4rs::config::{Config, Appender, Logger, Root};
+use log4rs::append::console::ConsoleAppender;
+use log::LevelFilter;
+use log4rs::encode::pattern::PatternEncoder;
 
-use clap::{App, Arg};
-use log::LevelFilter::Info;
-use serenity::Client;
+pub mod data;
+pub mod db;
+pub mod util;
 
-use crate::glimbot::config::Config;
-use crate::glimbot::GlimDispatch;
-use crate::glimbot::modules::bag::bag_module;
-use crate::glimbot::modules::help::help_module;
-use crate::glimbot::modules::ping::ping_module;
-use crate::glimbot::modules::bot_admin::{bot_admin_module, bot_stats_module};
-use crate::glimbot::modules::incrementer::incrementer_module;
-use crate::glimbot::modules::dice::roll_module;
-use crate::glimbot::db::{pooled_connection};
+#[cfg(feature = "development")]
+pub mod dev;
 
-mod glimbot;
+pub mod args;
+pub mod dispatch;
+pub mod modules;
+pub mod error;
 
-embed_migrations!();
+fn main() -> Fallible<()> {
+    better_panic::install();
+    let _ = dotenv::dotenv();
 
-fn init_logging(cwd: &str, level: log::LevelFilter) -> std::result::Result<(), fern::InitError> {
-    fern::Dispatch::new()
-        .format(|out, msg, rec| {
-            let now = chrono::Local::now();
-            out.finish(format_args!(
-                "[{}.{:03}][{:?}][{}][{}] {}",
-                now.timestamp(),
-                now.timestamp_subsec_millis(),
-                thread::current().id(),
-                rec.level(),
-                rec.module_path().unwrap_or("<unk>"),
-                msg
-            ))
-        })
-        .chain(fern::Dispatch::new()
-            .level(log::LevelFilter::Warn)
-            .level_for("glimbot", level)
-            .chain(std::io::stdout()))
-        .chain(fern::Dispatch::new()
-            .level(log::LevelFilter::Warn)
-            .level_for("glimbot", log::LevelFilter::Debug)
-            .chain(
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(Path::new(cwd).join("glimlog.txt"))?))
-        .apply()?;
+    let mut subcommands = vec![];
+
+    #[cfg(feature = "development")]
+        subcommands.push(dev::command_parser());
+
+    subcommands.push(db::args::command_parser());
+    subcommands.push(dispatch::args::command_parser());
+
+    let matches = App::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .author(AUTHORS)
+        .version(VERSION)
+        .subcommands(subcommands)
+        .arg(Arg::with_name("verbosity")
+            .short("v")
+            .multiple(true)
+            .help("Sets the logging verbosity level. Default: INFO")
+        )
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .get_matches();
+
+    let verbosity = match matches.occurrences_of("verbosity") {
+        0 => LevelFilter::Info,
+        1 => LevelFilter::Debug,
+        i if i >= 2 => LevelFilter::Trace,
+        _ => unreachable!()
+    };
+
+    init_logging(verbosity)?;
+    // Create our working directory
+    let data_dir = data_folder();
+    ensure_data_folder(&data_dir);
+
+    #[cfg(feature = "development")]
+        dev::handle_matches(&matches)?;
+
+    db::args::handle_matches(&matches)?;
+    dispatch::args::handle_matches(&matches)?;
 
     Ok(())
 }
 
+fn ensure_data_folder(p: impl AsRef<Path>) {
+    std::fs::create_dir_all(p).expect("Couldn't create the path to default directory.");
+}
 
-fn main() {
-    better_panic::install();
 
-    let matches = App::new("Glimbot - The Discord Admin Bot")
-        .version(glimbot::env::VERSION)
-        .author(glimbot::env::AUTHORS)
-        .about("She is always watching.")
-        .arg(Arg::with_name("CONFIG")
-            .help("Glimbot config file.")
-            .required(true)
-            .index(1))
-        .arg(Arg::with_name("working_dir")
-            .short("w")
-            .long("working-dir")
-            .takes_value(true)
-            .value_name("DIR")
-            .help("The directory in which to read/write logs, server configs, database, etc. Will be created if doesn't exist.")
-        ).arg(Arg::with_name("verbose")
-        .short("v")
-        .multiple(true)
-        .help("Specify multiple times to increase stdout logging level.")
-    )
-        .get_matches();
+fn init_logging(l: LevelFilter) -> Fallible<()> {
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(
+            PatternEncoder::new("[{d(%s%.3f)(utc)}][{h({l:<5})}][{M}][{I}]  {m}{n}")
+        ))
+        .build();
 
-    let config = matches.value_of("CONFIG").unwrap();
-    let config_file = File::open(config).expect("Glimmy needs her config file.");
+    let config = Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .logger(Logger::builder().build("glimbot", l))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
 
-    let wd = matches.value_of("working_dir").unwrap_or("./");
-    std::fs::create_dir_all(wd).expect("Couldn't create working directory.");
+    log4rs::init_config(config)?;
 
-    let stdout_log_level = match matches.occurrences_of("verbose") {
-        0 => Info,
-        1 => log::LevelFilter::Debug,
-        _ => log::LevelFilter::Trace
-    };
-
-    let conn = pooled_connection("glimbot.db");
-    embedded_migrations::run(&conn.get().unwrap()).unwrap();
-    std::mem::drop(conn);
-
-    init_logging(wd, stdout_log_level).unwrap();
-    info!("Glimbot version {} coming online.", glimbot::env::VERSION);
-
-    let conf_map: Config = serde_yaml::from_reader(config_file).unwrap();
-
-    let glim = GlimDispatch::new()
-        .with_module(incrementer_module())
-        .with_module(roll_module())
-        .with_module(ping_module())
-        .with_module(help_module())
-        .with_module(bag_module())
-        .with_module(bot_admin_module())
-        .with_module(bot_stats_module());
-
-    let mut client = Client::new(conf_map.token(), glim)
-        .expect("Could not connect to Discord. B̵a̵n̵i̵s̵h̵ ̵s̵p̵e̵l̵l̵ ̵i̵n̵e̵f̵f̵e̵c̵t̵i̵v̵e̵.");
-
-    client.start_autosharded().expect("Could not start")
+    Ok(())
 }
