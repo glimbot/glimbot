@@ -46,7 +46,7 @@ CREATE TRIGGER IF NOT EXISTS ensure_cmd_prefix_single_char
     ON guild_config
     WHEN LENGTH(NEW.command_prefix) <> 1
 BEGIN
-    RAISE (ABORT, 'New command prefix must have length 1.');
+    SELECT RAISE (ABORT, 'New command prefix must have length 1.');
 END;
 
 CREATE TRIGGER IF NOT EXISTS ensure_cmd_prefix_single_char_ins
@@ -54,5 +54,5 @@ CREATE TRIGGER IF NOT EXISTS ensure_cmd_prefix_single_char_ins
     ON guild_config
     WHEN LENGTH(NEW.command_prefix) <> 1
 BEGIN
-    RAISE (ABORT, 'New command prefix must have length 1.');
+    SELECT RAISE (ABORT, 'New command prefix must have length 1.');
 END;

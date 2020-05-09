@@ -5,5 +5,5 @@ glimbot.db*
 src/glimbot/schema.rs
 *_conf.yaml
 .env
-*.sqlite3
+*.sqlite3*
 test/
