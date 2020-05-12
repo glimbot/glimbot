@@ -18,6 +18,7 @@
 //! This module and its functionality are deprecated in favor of [modules][crate::modules]
 
 use clap::{App, ArgMatches};
+use crate::error::BotError;
 
 #[doc(hidden)]
 #[derive(thiserror::Error, Debug)]
@@ -28,18 +29,28 @@ pub enum ParseError {
     Splitter(#[from] shell_words::ParseError),
 }
 
+impl BotError for ParseError {
+    fn is_user_error(&self) -> bool {
+        true
+    }
+}
+
+impl From<ParseError> for crate::modules::commands::Error {
+    fn from(e: ParseError) -> Self {
+        crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
 #[doc(hidden)]
 pub type Result<T> = std::result::Result<T, ParseError>;
 
-static DUMMY: [&'static str; 1] = ["dummy"];
-
 #[doc(hidden)]
-pub fn parse_app_matches<'a, 'b>(s: impl AsRef<str>, a: &App<'a, 'b>) -> Result<ArgMatches<'a>> {
+pub fn parse_app_matches<'a, 'b>(name: impl AsRef<str>, s: impl AsRef<str>, a: &App<'a, 'b>) -> Result<ArgMatches<'a>> {
     let s = s.as_ref();
     let parts = shell_words::split(s)?;
     let app = a.clone();
     let matches = app.get_matches_from_safe(
-        DUMMY.iter().cloned()
+        [name.as_ref()].iter().cloned()
             .chain(parts.iter().map(|s| s.as_str())))?;
     Ok(matches)
 }

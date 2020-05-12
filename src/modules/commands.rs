@@ -34,15 +34,21 @@ pub enum Error {
     InsufficientBotPerms,
     /// The command failed for some other reason unrelated to permissions.
     #[error("{0}")]
-    RuntimeFailure(anyhow::Error),
-    /// The command failed for some reason which should not be revealed to the user.
-    #[error("An unspecified error occurred while performing the action.")]
-    Other(#[from] anyhow::Error),
+    RuntimeFailure(Box<dyn BotError>),
 }
 
 impl BotError for Error {
     fn is_user_error(&self) -> bool {
-        !matches!(self, Error::Other(_))
+        match self {
+            Error::RuntimeFailure(e) => {e.is_user_error()},
+            _ => true
+        }
+    }
+}
+
+impl From<Box<dyn BotError>> for Error {
+    fn from(e: Box<dyn BotError>) -> Self {
+        Error::RuntimeFailure(e)
     }
 }
 

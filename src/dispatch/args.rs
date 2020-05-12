@@ -20,6 +20,9 @@ use clap::{App, SubCommand, ArgMatches};
 use crate::util::Fallible;
 use serenity::Client;
 use crate::modules::ping::ping_module;
+use crate::modules::base_hooks::base_hooks;
+use crate::modules::no_bot::deny_bot_mod;
+use crate::modules::config::config_mod;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
@@ -33,6 +36,9 @@ pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
         let token = std::env::var("GLIMBOT_TOKEN")?;
         let owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
         let dispatch = super::Dispatch::new(owner.into())
+            .with_module(base_hooks())
+            .with_module(deny_bot_mod())
+            .with_module(config_mod())
             .with_module(ping_module());
         let mut client = Client::new(token, dispatch)?;
         client.start_autosharded()?;

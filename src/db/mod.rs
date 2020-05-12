@@ -54,6 +54,12 @@ impl BotError for DatabaseError {
     }
 }
 
+impl From<DatabaseError> for crate::modules::commands::Error {
+    fn from(e: DatabaseError) -> Self {
+        crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
 /// A struct representing the value of the user_version field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord)]
 pub enum DatabaseVersion {
@@ -325,6 +331,12 @@ pub fn migrate_to(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
 /// Downgrades the connected database to the specified version.
 pub fn downgrade(conn: &mut Connection, when: DatabaseVersion) -> Result<()> {
 
+    let when = if when == DatabaseVersion::Uninitialized {
+        DatabaseVersion::Version(0)
+    } else {
+        when
+    };
+
     let trans = conn.transaction_with_behavior(TransactionBehavior::Exclusive)?; // TRAAAAAAAAAAAAAANS
     let mut ver = trans.query_row(
         "PRAGMA user_version;",
@@ -436,6 +448,17 @@ mod tests {
         let dummy_dir = TempDir::new("migrations").unwrap();
         let mut dummy_conn = ensure_guild_db(dummy_dir.as_ref(), GuildId::from(std::u64::MAX)).unwrap();
         upgrade(&mut dummy_conn, None).unwrap();
-        assert_eq!(get_db_version(&dummy_conn).unwrap(), DatabaseVersion::Version(0))
+        assert_eq!(get_db_version(&dummy_conn).unwrap(), *DB_VERSION)
+    }
+
+    #[test]
+    pub fn test_migration_down() {
+        let dummy_dir = TempDir::new("migrations").unwrap();
+        let mut dummy_conn = ensure_guild_db(dummy_dir.as_ref(), GuildId::from(std::u64::MAX)).unwrap();
+        upgrade(&mut dummy_conn, None).unwrap();
+        downgrade(&mut dummy_conn, DatabaseVersion::Uninitialized).unwrap();
+        assert_eq!(get_db_version(&dummy_conn).unwrap(), DatabaseVersion::Uninitialized);
+        upgrade(&mut dummy_conn, None).unwrap();
+        assert_eq!(get_db_version(&dummy_conn).unwrap(), *DB_VERSION)
     }
 }

@@ -32,6 +32,9 @@ use regex::Regex;
 use crate::error::{BotResult};
 use serenity::utils::MessageBuilder;
 use std::borrow::Cow;
+use crate::db::GuildConn;
+use crate::modules::config;
+use crate::modules::config::Validator;
 
 pub mod args;
 
@@ -40,7 +43,8 @@ pub mod args;
 pub struct Dispatch {
     owner: AtomicU64,
     modules: HashMap<String, Module>,
-    command_hooks: Vec<CommandHookFn>
+    command_hooks: Vec<CommandHookFn>,
+    config_validator: config::Validator
 }
 
 // Thread local because Regex just uses an interior mutex if used in multiple threads, blegh.
@@ -56,7 +60,7 @@ impl EventHandler for Dispatch {
 
         if let Err(e) = res {
             let msg = if e.is_user_error() {
-                info!("{}", &e);
+                debug!("{}", &e);
                 MessageBuilder::new()
                     .push_codeblock_safe(e, None)
                     .build()
@@ -75,7 +79,7 @@ impl EventHandler for Dispatch {
         ctx.set_activity(Activity::playing("Cultist Simulator"));
         let active_guilds = &data_about_bot.guilds;
         active_guilds.iter().for_each(
-            |g| get_cached_connection(g.id()).log_error()
+            |g| debug!("We're in guild {}", g.id())
         );
 
 
@@ -89,7 +93,8 @@ impl Dispatch {
         Dispatch {
             owner: AtomicU64::new(*owner.as_u64()),
             command_hooks: Vec::new(),
-            modules: HashMap::new()
+            modules: HashMap::new(),
+            config_validator: Validator::new()
         }
     }
 
@@ -140,7 +145,20 @@ impl Dispatch {
 
     /// Adds a module to the dispatcher.
     pub fn with_module(mut self, m: Module) -> Self {
+        info!("Loading module {} with {} command, {} hooks, {} config values.", m.name(),
+            if m.command_handler().is_some() {
+                "a"
+            } else {
+                "no"
+            },
+            m.command_hooks().len(),
+            m.config_values().len()
+        );
         self.command_hooks.extend(m.command_hooks().iter());
+        m.config_values().iter().for_each(|v| {
+            debug!("Added config key {}", v.name());
+            self.config_validator.add_value(v.clone())
+        });
         self.modules.insert(m.name().to_owned(), m);
         self
     }
@@ -151,5 +169,35 @@ impl Dispatch {
             .get(cmd.as_ref())
             .and_then(|x|x.command_handler())
             .map(|x|x.as_ref())
+    }
+
+    /// Sets the config value to the given value after validating it.
+    pub fn set_config(&self, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> BotResult<()> {
+        self.config_validator.validate(key.as_ref(), value.as_ref())?;
+        conn.set_value(key, value)?;
+        Ok(())
+    }
+
+    /// Gets the config value. Fails if the key doesn't exist.
+    pub fn get_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> BotResult<String> {
+        self.config_validator.check_key(key.as_ref())?;
+        let o = conn.get_value(key)?;
+        Ok(o)
+    }
+
+    /// Gets the config value or sets the config value and *then* returns it if it doesn't already exist.
+    pub fn get_or_set_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> BotResult<String> {
+        self.config_validator.check_key(key.as_ref())?;
+        let default = self.config_validator.default_for(key.as_ref())?;
+        let o = conn.get_or_else_set_value(
+            key.as_ref(), || default.clone()
+        )?;
+
+        Ok(o)
+    }
+
+    /// Accessor for the config validator.
+    pub fn config_validator(&self) -> &config::Validator {
+        &self.config_validator
     }
 }

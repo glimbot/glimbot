@@ -25,13 +25,17 @@ use crate::modules::hook::CommandHookFn;
 pub mod commands;
 pub mod hook;
 pub mod ping;
+pub mod base_hooks;
+pub mod no_bot;
+pub mod config;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
 /// and one or more hooks.
 pub struct Module {
     name: String,
     command_handler: Option<Arc<dyn Command>>,
-    command_hooks: Vec<CommandHookFn>
+    command_hooks: Vec<CommandHookFn>,
+    config_values: Vec<config::Value>,
 }
 
 impl Module {
@@ -41,6 +45,7 @@ impl Module {
             name: name.into(),
             command_hooks: Vec::new(),
             command_handler: None,
+            config_values: Vec::new()
         }
     }
 
@@ -55,6 +60,17 @@ impl Module {
         let ptr: Arc<dyn Command> = Arc::new(cmd);
         self.command_handler = Some(ptr);
         self
+    }
+
+    /// Associates a [Value][config::Value] with this module.
+    pub fn with_config_value(mut self, v: config::Value) -> Self {
+        self.config_values.push(v);
+        self
+    }
+
+    /// Accessor for associated config values.
+    pub fn config_values(&self) -> &[config::Value] {
+        &self.config_values
     }
 
     /// Accessor for the name of the module.

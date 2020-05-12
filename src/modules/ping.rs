@@ -24,6 +24,7 @@ use serenity::model::channel::Message;
 use crate::modules::commands::Result;
 use crate::modules::Module;
 use std::borrow::Cow;
+use crate::error::AnyError;
 
 /// A command that reflects user input back to the user.
 #[derive(Copy, Clone, Debug)]
@@ -39,7 +40,7 @@ impl Command for Ping {
         } else {
             String::from("Pong!")
         };
-        msg.channel_id.say(&ctx.http, message).map_err(anyhow::Error::new)?;
+        msg.channel_id.say(&ctx.http, message).map_err(AnyError::boxed)?;
         Ok(())
     }
 }
