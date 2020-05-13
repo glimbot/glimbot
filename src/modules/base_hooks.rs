@@ -64,4 +64,5 @@ pub fn base_hooks() -> Module {
                                               "The single character before a command.",
                                               validate_command_prefix,
                                               Some("!")))
+        .clear_dependencies()
 }

@@ -21,6 +21,7 @@
 use crate::modules::commands::Command;
 use std::sync::Arc;
 use crate::modules::hook::CommandHookFn;
+use std::collections::HashSet;
 
 pub mod commands;
 pub mod hook;
@@ -36,17 +37,28 @@ pub struct Module {
     command_handler: Option<Arc<dyn Command>>,
     command_hooks: Vec<CommandHookFn>,
     config_values: Vec<config::Value>,
+    dependencies: HashSet<String>
 }
 
 impl Module {
     /// Creates a new module with the given name.
     pub fn with_name(name: impl Into<String>) -> Self {
-        Module {
+        let mut o = Module {
             name: name.into(),
             command_hooks: Vec::new(),
             command_handler: None,
-            config_values: Vec::new()
-        }
+            config_values: Vec::new(),
+            dependencies: HashSet::new()
+        };
+
+        o.dependencies.insert("base_hooks".to_string());
+        o
+    }
+
+    /// Clears all dependencies from a module.
+    pub fn clear_dependencies(mut self) -> Self {
+        self.dependencies.clear();
+        self
     }
 
     /// Adds a command hook to the current module.
@@ -68,6 +80,19 @@ impl Module {
         self
     }
 
+    /// Associates a module with another module as a dependency.
+    /// Loading this module will panic if the other modules are not loaded.
+    pub fn with_dependency(mut self, d: String) -> Self {
+        self.dependencies.insert(d);
+        self
+    }
+
+    /// Associates several modules with other modules.
+    pub fn with_dependencies(mut self, ds: impl IntoIterator<Item = String>) -> Self {
+        self.dependencies.extend(ds);
+        self
+    }
+
     /// Accessor for associated config values.
     pub fn config_values(&self) -> &[config::Value] {
         &self.config_values
@@ -86,5 +111,10 @@ impl Module {
     /// Accessor for any command hooks held in the Module.
     pub fn command_hooks(&self) -> &[CommandHookFn] {
         &self.command_hooks
+    }
+
+    /// Accessor for the dependencies on other modules for this module.
+    pub fn dependencies(&self) -> &HashSet<String> {
+        &self.dependencies
     }
 }

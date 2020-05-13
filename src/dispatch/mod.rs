@@ -23,7 +23,7 @@ use crate::db::cache::get_cached_connection;
 use serenity::model::prelude::UserId;
 use std::sync::atomic::AtomicU64;
 use crate::modules::hook::CommandHookFn;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::modules::{Module, hook};
 use crate::modules::commands::Command;
 use serenity::model::channel::Message;
@@ -154,6 +154,23 @@ impl Dispatch {
             m.command_hooks().len(),
             m.config_values().len()
         );
+
+        let deps = m.dependencies();
+        trace!("Module {} has dependencies {:?}", m.name(), deps);
+        if deps.iter().any(|s| !self.modules.contains_key(s)) {
+            let keyset: HashSet<String> = self.modules.keys()
+                .into_iter()
+                .map(|x| x.clone())
+                .collect();
+            let diff = deps.difference(&keyset);
+            let missing_deps: HashSet<String> = diff.map(String::clone).collect();
+            panic!("Attempted to load module {}, which depends on {:?}, but all of {:?} were missing.",
+                m.name(),
+                deps,
+                missing_deps
+            )
+        }
+
         self.command_hooks.extend(m.command_hooks().iter());
         m.config_values().iter().for_each(|v| {
             debug!("Added config key {}", v.name());
