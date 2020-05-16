@@ -1,12 +1,13 @@
 use rusqlite::{Connection};
+use serenity::model::id::GuildId;
 
 /// Wrapper around [Connection] to perform typical guild operations.
-pub struct GuildConn(Connection);
+pub struct GuildConn { conn: Connection, id: GuildId }
 
 impl GuildConn {
     /// Wraps a Connection to create a [GuildConn]
-    pub fn new(c: Connection) -> Self {
-        GuildConn(c)
+    pub fn new(id: GuildId, c: Connection) -> Self {
+        GuildConn { conn: c, id }
     }
 
     /// Retrieves the command prefix of the guild from the database.
@@ -56,17 +57,22 @@ impl GuildConn {
 
         Ok(())
     }
+
+    /// Retrieves the [GuildId] from this connection
+    pub fn as_id(&self) -> &GuildId {
+        &self.id
+    }
 }
 
 impl AsRef<Connection> for GuildConn {
     fn as_ref(&self) -> &Connection {
-        &self.0
+        &self.conn
     }
 }
 
 impl AsMut<Connection> for GuildConn {
     fn as_mut(&mut self) -> &mut Connection {
-        &mut self.0
+        &mut self.conn
     }
 }
 
@@ -79,9 +85,10 @@ mod tests {
     #[test]
     fn test_command_prefix() {
         let dummy_dir = TempDir::new("migrations").unwrap();
-        let mut dummy_conn = ensure_guild_db(dummy_dir.as_ref(), GuildId::from(std::u64::MAX)).unwrap();
+        let id = GuildId::from(std::u64::MAX);
+        let mut dummy_conn = ensure_guild_db(dummy_dir.as_ref(), id).unwrap();
         init_guild_db(&mut dummy_conn).unwrap();
-        let gconn = GuildConn::new(dummy_conn);
+        let gconn = GuildConn::new(id, dummy_conn);
         let c = gconn.command_prefix().unwrap();
         assert_eq!(c, '!');
         gconn.set_command_prefix('~').unwrap();

@@ -54,7 +54,7 @@ pub fn get_cached_connection(g: GuildId) -> super::Result<Rc<RefCell<GuildConn>>
             match cache_ref.get_mut(&g) {
                 None => {
                     trace!("Cache miss for guild {}", g);
-                    let mut c = GuildConn::new(ensure_guild_db_in_data_dir(g)?);
+                    let mut c = GuildConn::new(g, ensure_guild_db_in_data_dir(g)?);
                     init_guild_db(c.as_mut())?;
                     let out = Rc::new(
                         RefCell::new(

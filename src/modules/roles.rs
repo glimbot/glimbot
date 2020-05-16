@@ -31,8 +31,10 @@ use crate::error::AnyError;
 use std::str::{FromStr, ParseBoolError};
 use crate::modules::commands::Command;
 use crate::args::parse_app_matches;
-use crate::modules::config::fallible_validator;
+use crate::modules::config::{fallible_validator};
 use serenity::utils::MessageBuilder;
+use std::sync::Arc;
+use crate::db::GuildConn;
 
 static ADMIN_KEY: &'static str = "admin_role";
 
@@ -50,7 +52,7 @@ fn role_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Mess
     let conn = get_cached_connection(guild)?;
     let rconn = conn.as_ref().borrow();
 
-    let admin_role: RoleId = disp.get_config(&rconn, ADMIN_KEY)?.parse::<u64>().unwrap().into();
+    let admin_role: RoleId = disp.get_config(&rconn, ADMIN_KEY)?.parse::<RoleId>().unwrap().into();
     if msg.author.has_role(ctx, guild, admin_role).map_err(AnyError::boxed)? {
         trace!("User is admin.");
         return Ok(name);
@@ -200,6 +202,23 @@ impl Command for Roles {
     }
 }
 
+/// Checks the validity of a numerical role id
+pub fn valid_role(_disp: &Dispatch, ctx: &Context, conn: &GuildConn, s: &str) -> bool {
+    let id = *conn.as_id();
+    let guild = ctx.cache.read().guild(id);
+    if let Some(g) = guild {
+        let rg = g.read();
+        let parsed = RoleId::from_str(s);
+        if let Ok(id) = parsed {
+            rg.roles.get(&id).is_some()
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
 /// Creates a roles [Module].
 pub fn roles_module() -> Module {
     Module::with_name("roles")
@@ -208,7 +227,7 @@ pub fn roles_module() -> Module {
         .with_config_value(config::Value::new(
             ADMIN_KEY,
             "The role which should be allowed to run restricted commands.",
-            config::valid_parseable::<u64>,
+            Arc::new(valid_role),
             Option::<String>::None,
         ))
         .with_command_hook(role_hook)

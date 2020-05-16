@@ -23,6 +23,8 @@ use serenity::model::prelude::Message;
 use std::borrow::Cow;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use crate::modules::config::simple_validator;
+use std::sync::Arc;
 
 const MAX_COMMAND_INVOCATION_LENGTH: usize = 1500; // Max length for messages to be passed to commands.
 
@@ -62,7 +64,7 @@ pub fn base_hooks() -> Module {
         .with_command_hook(length_hook)
         .with_config_value(config::Value::new("command_prefix",
                                               "The single character before a command.",
-                                              validate_command_prefix,
+                                              Arc::new(simple_validator(validate_command_prefix)),
                                               Some("!")))
         .clear_dependencies()
         .with_sensitivity(true)

@@ -234,8 +234,8 @@ impl Dispatch {
     }
 
     /// Sets the config value to the given value after validating it.
-    pub fn set_config(&self, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<(), KeyRetrievalError> {
-        self.config_validator.validate(key.as_ref(), value.as_ref())?;
+    pub fn set_config(&self, ctx: &Context, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<(), KeyRetrievalError> {
+        self.config_validator.validate(self, ctx, conn, key.as_ref(), value.as_ref())?;
         conn.set_value(key, value)?;
         Ok(())
     }
@@ -251,6 +251,7 @@ impl Dispatch {
     pub fn get_or_set_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> Result<String, KeyRetrievalError> {
         self.config_validator.check_key(key.as_ref())?;
         let default = self.config_validator.default_for(key.as_ref())?;
+        // There is an assumption here that default is a valid member of the type.
         let o = conn.get_or_else_set_value(
             key.as_ref(), || default.clone()
         )?;

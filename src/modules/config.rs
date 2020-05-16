@@ -30,9 +30,14 @@ use once_cell::unsync::Lazy;
 use crate::db::cache::get_cached_connection;
 use serenity::utils::MessageBuilder;
 use crate::modules::Module;
+use crate::db::GuildConn;
+use std::sync::Arc;
 
 /// A validation function for config values. Should return true if the value would be valid input.
-pub type ConfigValidatorFn = fn(&str) -> bool;
+pub type ConfigValidatorFn = dyn (Fn(&Dispatch, &Context, &GuildConn, &str) -> bool) + Send + Sync + 'static;
+
+/// Pointer to a [ConfigValidatorFnPtr]
+pub type ConfigValidatorFnPtr = Arc<ConfigValidatorFn>;
 
 /// Alias for config validation failures.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -45,7 +50,7 @@ pub enum Error {
     NoSuchKey(String),
     /// The given input is not valid for that key.
     #[error("Config value is invalid: {0}")]
-    InvalidValue(&'static str),
+    InvalidValue(Cow<'static, str>),
     /// There is no default value for the given value.
     #[error("There is no default value for that.")]
     NoDefault,
@@ -77,13 +82,13 @@ impl Validator {
     }
 
     /// Validates the config value
-    pub fn validate(&self, config_name: impl AsRef<str>, value: impl AsRef<str>) -> Result<()> {
+    pub fn validate(&self, disp: &Dispatch, ctx: &Context, conn: &GuildConn, config_name: impl AsRef<str>, value: impl AsRef<str>) -> Result<()> {
         let cval = self.validators.get(config_name.as_ref())
             .ok_or(Error::NoSuchKey(config_name.as_ref().to_string()))?;
-        if cval.is_valid(value.as_ref()) {
+        if cval.is_valid(disp, ctx, conn,value.as_ref()) {
             Ok(())
         } else {
-            Err(Error::InvalidValue(cval.name))
+            Err(Error::InvalidValue(value.as_ref().to_string().into()))
         }
     }
 
@@ -120,13 +125,13 @@ impl Validator {
 pub struct Value {
     name: &'static str,
     help: &'static str,
-    validator: ConfigValidatorFn,
+    validator: ConfigValidatorFnPtr,
     default: Option<String>,
 }
 
 impl Value {
     /// Creates a new Value.
-    pub fn new(name: &'static str, help: &'static str, validator: ConfigValidatorFn, default: Option<impl Into<String>>) -> Self {
+    pub fn new(name: &'static str, help: &'static str, validator: ConfigValidatorFnPtr, default: Option<impl Into<String>>) -> Self {
         Value { name, help, validator, default: default.map(|x| x.into()) }
     }
 
@@ -141,8 +146,8 @@ impl Value {
     }
 
     /// Returns whether or not the given value is a valid config value
-    pub fn is_valid(&self, s: &str) -> bool {
-        (self.validator)(s)
+    pub fn is_valid(&self, disp: &Dispatch, ctx: &Context, conn: &GuildConn, s: &str) -> bool {
+        (self.validator)(disp, ctx, conn, s)
     }
 
     /// Returns an optional default setting for this config value.
@@ -164,6 +169,11 @@ pub fn valid_parseable<T: FromStr>(s: &str) -> bool {
 /// Function for creating validators for parseable types
 pub fn fallible_validator<T: FromStr<Err=E>, E: std::error::Error>(s: String) -> std::result::Result<(), String> {
     s.parse::<T>().map_err(|e| format!("{}", e)).map(|_|())
+}
+
+/// Creates a validator for types that can be checked just by a parser or regex
+pub fn simple_validator(f: impl Fn(&str) -> bool) -> impl Fn(&Dispatch, &Context, &GuildConn, &str) -> bool {
+    move |_, _, _, s| f(s)
 }
 
 /// The config command structure. Contains the parser for command arguments.
@@ -195,7 +205,7 @@ static PARSER: Lazy<App<'static, 'static>> = Lazy::new (
                     .about("Retrieves the value of CONFIG_KEY for this guild.")
             )
             .subcommand(
-                SubCommand::with_name("help")
+                SubCommand::with_name("info")
                     .arg(key_arg.clone())
                     .about("Displays help for the given config value.")
             )
@@ -211,7 +221,7 @@ impl Cmd for Command {
         )?;
 
         let reply = match m.subcommand() {
-            ("help", Some(subm)) => {
+            ("info", Some(subm)) => {
                 let key = subm.value_of("config-key").unwrap();
                 let help = disp.config_validator().help_for(key)?;
                 format!("{}: {}", key, help)
@@ -233,7 +243,7 @@ impl Cmd for Command {
                 let val = subm.value_of("value").unwrap();
                 let conn = get_cached_connection(msg.guild_id.unwrap())?;
                 let rl = conn.as_ref().borrow();
-                disp.set_config(&rl, key, val)?;
+                disp.set_config(ctx, &rl, key, val)?;
 
                 format!("Set {} to {}", key, val)
             }

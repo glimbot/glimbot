@@ -23,7 +23,8 @@ use std::borrow::{Cow};
 use crate::db::cache::get_cached_connection;
 use crate::modules::hook::Error::DeniedWithReason;
 use crate::modules::{Module, config};
-use crate::modules::config::valid_bool;
+use crate::modules::config::{valid_bool, simple_validator};
+use std::sync::Arc;
 
 static NO_BOT_KEY: &'static str = "ignore_bots";
 const DEFAULT_VALUE: bool = false;
@@ -46,7 +47,7 @@ pub fn deny_bot_mod() -> Module {
         .with_config_value(
             config::Value::new(NO_BOT_KEY,
                                "Whether or not bots are allowed to send Glimbot commands. Default is false.",
-                               valid_bool,
+                               Arc::new(simple_validator(valid_bool)),
                                Some(DEFAULT_VALUE.to_string())))
         .with_command_hook(no_bot_hook)
         .with_sensitivity(true)
