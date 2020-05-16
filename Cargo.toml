@@ -16,7 +16,7 @@
 
 [package]
 name = "glimbot"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Nick Samson <me@nicksamson.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
