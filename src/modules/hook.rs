@@ -49,6 +49,12 @@ impl From<Box<dyn BotError>> for Error {
     }
 }
 
+impl From<Error> for crate::modules::commands::Error {
+    fn from(e: Error) -> Self {
+        crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
 impl BotError for Error {
     fn is_user_error(&self) -> bool {
         match self {

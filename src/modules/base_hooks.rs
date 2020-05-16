@@ -65,4 +65,5 @@ pub fn base_hooks() -> Module {
                                               validate_command_prefix,
                                               Some("!")))
         .clear_dependencies()
+        .with_sensitivity(true)
 }

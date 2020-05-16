@@ -29,7 +29,7 @@ use crate::modules::commands::Command;
 use serenity::model::channel::Message;
 use once_cell::unsync::Lazy;
 use regex::Regex;
-use crate::error::{BotResult};
+use crate::error::{BotResult, BotError};
 use serenity::utils::MessageBuilder;
 use std::borrow::Cow;
 use crate::db::GuildConn;
@@ -84,6 +84,51 @@ impl EventHandler for Dispatch {
 
 
         info!("Glimbot is up and running in at least {} servers.", active_guilds.len());
+    }
+}
+
+/// Errors related to retrieving config values from guild databases.
+#[derive(thiserror::Error, Debug)]
+pub enum KeyRetrievalError {
+    /// A database error occurred, including the database not containing the key.
+    #[error("{0}")]
+    SQLError(#[from] crate::db::DatabaseError),
+    /// The key didn't exist, or there was no default, etc.
+    #[error("{0}")]
+    ConfigError(#[from] config::Error)
+}
+
+impl KeyRetrievalError {
+    fn missing_key(&self) -> bool {
+        match self {
+            KeyRetrievalError::SQLError(d) => {d.no_rows_returned()},
+            KeyRetrievalError::ConfigError(_) => false,
+        }
+    }
+}
+
+impl BotError for KeyRetrievalError {
+    fn is_user_error(&self) -> bool {
+        match self {
+            KeyRetrievalError::SQLError(e) => {e.is_user_error()},
+            KeyRetrievalError::ConfigError(e) => {e.is_user_error()},
+        }
+    }
+}
+
+impl From<KeyRetrievalError> for hook::Error {
+    fn from(e: KeyRetrievalError) -> Self {
+        if e.missing_key() {
+            hook::Error::DeniedWithReason("A needed configuration key was not set.".into())
+        } else {
+            hook::Error::Failed(e.into())
+        }
+    }
+}
+
+impl From<KeyRetrievalError> for crate::modules::commands::Error {
+    fn from(e: KeyRetrievalError) -> Self {
+        crate::modules::commands::Error::RuntimeFailure(e.into())
     }
 }
 
@@ -189,21 +234,21 @@ impl Dispatch {
     }
 
     /// Sets the config value to the given value after validating it.
-    pub fn set_config(&self, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> BotResult<()> {
+    pub fn set_config(&self, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<(), KeyRetrievalError> {
         self.config_validator.validate(key.as_ref(), value.as_ref())?;
         conn.set_value(key, value)?;
         Ok(())
     }
 
     /// Gets the config value. Fails if the key doesn't exist.
-    pub fn get_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> BotResult<String> {
+    pub fn get_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> Result<String, KeyRetrievalError> {
         self.config_validator.check_key(key.as_ref())?;
         let o = conn.get_value(key)?;
         Ok(o)
     }
 
     /// Gets the config value or sets the config value and *then* returns it if it doesn't already exist.
-    pub fn get_or_set_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> BotResult<String> {
+    pub fn get_or_set_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> Result<String, KeyRetrievalError> {
         self.config_validator.check_key(key.as_ref())?;
         let default = self.config_validator.default_for(key.as_ref())?;
         let o = conn.get_or_else_set_value(
@@ -216,5 +261,10 @@ impl Dispatch {
     /// Accessor for the config validator.
     pub fn config_validator(&self) -> &config::Validator {
         &self.config_validator
+    }
+
+    /// Accessor for the modules in this dispatcher.
+    pub fn modules(&self) -> &HashMap<String, Module> {
+        &self.modules
     }
 }

@@ -49,4 +49,5 @@ impl Command for Ping {
 pub fn ping_module() -> Module {
     Module::with_name("ping")
         .with_command(Ping)
+        .with_sensitivity(false)
 }

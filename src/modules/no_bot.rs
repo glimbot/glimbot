@@ -49,4 +49,5 @@ pub fn deny_bot_mod() -> Module {
                                valid_bool,
                                Some(DEFAULT_VALUE.to_string())))
         .with_command_hook(no_bot_hook)
+        .with_sensitivity(true)
 }

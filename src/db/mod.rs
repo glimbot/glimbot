@@ -48,6 +48,16 @@ pub enum DatabaseError {
     TooNew,
 }
 
+impl DatabaseError {
+    /// True if the internal error represents no rows being returned
+    pub fn no_rows_returned(&self) -> bool {
+        match self {
+            DatabaseError::SQLError(rusqlite::Error::QueryReturnedNoRows) => true,
+            _ => false
+        }
+    }
+}
+
 impl BotError for DatabaseError {
     fn is_user_error(&self) -> bool {
         false

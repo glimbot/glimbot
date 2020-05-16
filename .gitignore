@@ -1,4 +1,5 @@
 /target
+.idea/
 config.yaml
 *log.txt
 glimbot.db*

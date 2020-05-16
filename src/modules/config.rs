@@ -161,6 +161,11 @@ pub fn valid_parseable<T: FromStr>(s: &str) -> bool {
     s.parse::<T>().is_ok()
 }
 
+/// Function for creating validators for parseable types
+pub fn fallible_validator<T: FromStr<Err=E>, E: std::error::Error>(s: String) -> std::result::Result<(), String> {
+    s.parse::<T>().map_err(|e| format!("{}", e)).map(|_|())
+}
+
 /// The config command structure. Contains the parser for command arguments.
 pub struct Command;
 
@@ -258,4 +263,5 @@ impl Cmd for Command {
 pub fn config_mod() -> Module {
     Module::with_name("config")
         .with_command(Command)
+        .with_sensitivity(true)
 }

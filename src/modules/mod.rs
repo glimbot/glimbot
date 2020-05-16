@@ -29,6 +29,7 @@ pub mod ping;
 pub mod base_hooks;
 pub mod no_bot;
 pub mod config;
+pub mod roles;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
 /// and one or more hooks.
@@ -37,7 +38,8 @@ pub struct Module {
     command_handler: Option<Arc<dyn Command>>,
     command_hooks: Vec<CommandHookFn>,
     config_values: Vec<config::Value>,
-    dependencies: HashSet<String>
+    dependencies: HashSet<String>,
+    sensitive: bool
 }
 
 impl Module {
@@ -48,7 +50,8 @@ impl Module {
             command_hooks: Vec::new(),
             command_handler: None,
             config_values: Vec::new(),
-            dependencies: HashSet::new()
+            dependencies: HashSet::new(),
+            sensitive: true
         };
 
         o.dependencies.insert("base_hooks".to_string());
@@ -58,6 +61,12 @@ impl Module {
     /// Clears all dependencies from a module.
     pub fn clear_dependencies(mut self) -> Self {
         self.dependencies.clear();
+        self
+    }
+
+    /// Sets the sensitivity for the module.
+    pub fn with_sensitivity(mut self, is_sensitive: bool) -> Self {
+        self.sensitive = is_sensitive;
         self
     }
 
@@ -82,8 +91,8 @@ impl Module {
 
     /// Associates a module with another module as a dependency.
     /// Loading this module will panic if the other modules are not loaded.
-    pub fn with_dependency(mut self, d: String) -> Self {
-        self.dependencies.insert(d);
+    pub fn with_dependency(mut self, d: impl Into<String>) -> Self {
+        self.dependencies.insert(d.into());
         self
     }
 
@@ -116,5 +125,10 @@ impl Module {
     /// Accessor for the dependencies on other modules for this module.
     pub fn dependencies(&self) -> &HashSet<String> {
         &self.dependencies
+    }
+
+    /// Accessor for whether or not this command should be restricted by default.
+    pub fn is_sensitive(&self) -> bool {
+        self.sensitive
     }
 }

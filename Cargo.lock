@@ -821,9 +821,9 @@ checksum = "eb147597cdf94ed43ab7a9038716637d2d1bf2bc571da995d0028dec06bd3018"
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.17.3"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d90181c2904c287e5390186be820e5ef311a3c62edebb7d6ca3d6a48ce041d"
+checksum = "1e704a02bcaecd4a08b93a23f6be59d0bd79cd161e0963e9499165a0a35df7bd"
 dependencies = [
  "cc",
  "pkg-config",
@@ -1156,7 +1156,7 @@ dependencies = [
  "cloudabi",
  "libc",
  "redox_syscall",
- "smallvec 1.2.0",
+ "smallvec 1.4.0",
  "winapi 0.3.8",
 ]
 
@@ -1470,9 +1470,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.22.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57edf4c4cea4d7e0fab069acb5da9e8e8e5403c78abc81b1f37d83af02148ea5"
+checksum = "45d0fd62e1df63d254714e6cb40d0a0e82e7a1623e7a27f679d851af092ae58b"
 dependencies = [
  "bitflags",
  "fallible-iterator",
@@ -1480,6 +1480,7 @@ dependencies = [
  "libsqlite3-sys",
  "lru-cache",
  "memchr",
+ "smallvec 1.4.0",
  "time",
 ]
 
@@ -1795,9 +1796,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.2.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c2fb2ec9bcd216a5b0d0ccf31ab17b5ed1d627960edff65bbe95d3ce221cefc"
+checksum = "c7cb5678e1615754284ec264d9bb5b4c27d2018577fd90ac0ceb578591ed5ee4"
 
 [[package]]
 name = "sourcefile"
@@ -2047,7 +2048,7 @@ version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5479532badd04e128284890390c1e876ef7a993d0570b3597ae43dfa1d59afa4"
 dependencies = [
- "smallvec 1.2.0",
+ "smallvec 1.4.0",
 ]
 
 [[package]]
