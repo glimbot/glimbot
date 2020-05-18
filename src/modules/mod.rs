@@ -30,6 +30,7 @@ pub mod base_hooks;
 pub mod no_bot;
 pub mod config;
 pub mod roles;
+pub mod me;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
 /// and one or more hooks.

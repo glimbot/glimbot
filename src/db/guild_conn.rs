@@ -1,5 +1,6 @@
 use rusqlite::{Connection};
 use serenity::model::id::GuildId;
+use serenity::model::prelude::RoleId;
 
 /// Wrapper around [Connection] to perform typical guild operations.
 pub struct GuildConn { conn: Connection, id: GuildId }
@@ -19,6 +20,17 @@ impl GuildConn {
     /// Sets the command prefix to the given character.
     pub fn set_command_prefix(&self, cmd: char) -> super::Result<()> {
         self.set_value("command_prefix", cmd.to_string())
+    }
+
+    /// Retrieves whether or not a role is joinable from the connection.
+    pub fn role_is_joinable(&self, id: RoleId) -> super::Result<bool> {
+        let v: bool = self.conn.query_row(
+            "SELECT ? IN joinable_roles;",
+                params![id.0 as i64],
+            |r| r.get(0)
+        )?;
+
+        Ok(v)
     }
 
     /// Retrieves the config element with the given key.

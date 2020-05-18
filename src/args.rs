@@ -20,13 +20,33 @@
 use clap::{App, ArgMatches};
 use crate::error::BotError;
 
-#[doc(hidden)]
+/// Errors related to parsing commands
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
+    /// There was a non-help error involving a [clap::Error]
     #[error("{0}")]
-    Clap(#[from] clap::Error),
+    Clap(clap::Error),
+    /// There was an issue parsing the arguments string.
     #[error("An error occurred while parsing the arguments string: {0}")]
     Splitter(#[from] shell_words::ParseError),
+    /// The help message ended up being displayed.
+    #[error("{0}")]
+    DisplayHelp(String)
+}
+
+impl ParseError {
+    /// Returns whether or not this is a DisplayHelp
+    pub fn is_help(&self) -> bool {
+        matches!(self, ParseError::DisplayHelp(_))
+    }
+
+    /// Converts this into the contained help message if [ParseError::is_help] would have returned true.
+    pub fn into_help(self) -> Option<String> {
+        match self {
+            ParseError::DisplayHelp(s) => Some(s),
+            _ => None
+        }
+    }
 }
 
 impl BotError for ParseError {
@@ -38,6 +58,15 @@ impl BotError for ParseError {
 impl From<ParseError> for crate::modules::commands::Error {
     fn from(e: ParseError) -> Self {
         crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
+impl From<clap::Error> for ParseError {
+    fn from(e: clap::Error) -> Self {
+        match &e.kind {
+            clap::ErrorKind::HelpDisplayed => ParseError::DisplayHelp(e.to_string()),
+            _ => ParseError::Clap(e)
+        }
     }
 }
 

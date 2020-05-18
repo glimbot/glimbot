@@ -50,7 +50,7 @@ pub struct Dispatch {
 // Thread local because Regex just uses an interior mutex if used in multiple threads, blegh.
 thread_local! {
     static CMD_REGEX: Lazy<Regex> = Lazy::new(
-        || Regex::new(r#"([\p{Math Symbol}\p{Punctuation}])(\w+)(?:\s*)(.*)"#).unwrap()
+        || Regex::new(r#"^([\p{Math Symbol}\p{Punctuation}])(\w+)(?:\s*)(.*)"#).unwrap()
     );
 }
 
@@ -60,7 +60,7 @@ impl EventHandler for Dispatch {
 
         if let Err(e) = res {
             let msg = if e.is_user_error() {
-                debug!("{}", &e);
+                trace!("{}", &e);
                 MessageBuilder::new()
                     .push_codeblock_safe(e, None)
                     .build()
@@ -146,7 +146,7 @@ impl Dispatch {
     /// Handles an incoming new message.
     pub fn handle_message(&self, ctx: &Context, new_message: &Message) -> BotResult<()> {
         if new_message.is_own(&ctx) {
-            debug!("Saw a message from myself.");
+            trace!("Saw a message from myself.");
             return Ok(());
         }
         trace!("Saw a message from user {}", &new_message.author);

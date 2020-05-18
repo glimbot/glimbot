@@ -32,6 +32,7 @@ use serenity::utils::MessageBuilder;
 use crate::modules::Module;
 use crate::db::GuildConn;
 use std::sync::Arc;
+use std::io::Cursor;
 
 /// A validation function for config values. Should return true if the value would be valid input.
 pub type ConfigValidatorFn = dyn (Fn(&Dispatch, &Context, &GuildConn, &str) -> bool) + Send + Sync + 'static;
@@ -259,13 +260,9 @@ impl Cmd for Command {
 
     fn help(&self) -> Cow<'static, str> {
         let c = PARSER.with(|p| (*p).clone());
-        let e = c.get_matches_from_safe(["config", "help"].iter());
-        match e {
-            Err(clap::Error { message, .. }) => {
-                Cow::Owned(message)
-            }
-            _ => unreachable!()
-        }
+        let mut curs = Cursor::new(Vec::new());
+        c.write_help(&mut curs).unwrap();
+        Cow::Owned(String::from_utf8(curs.into_inner()).unwrap())
     }
 }
 

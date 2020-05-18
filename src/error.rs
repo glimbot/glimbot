@@ -18,6 +18,8 @@
 
 use std::error::Error;
 use std::fmt;
+use serenity::http::StatusCode;
+use std::ops::Deref;
 
 /// A trait common to all errors used in the bot.
 pub trait BotError: Error {
@@ -65,3 +67,76 @@ impl <T: BotError + 'static> From<T> for Box<dyn BotError> {
 
 /// Alias for results returning a [BotError] more easily
 pub type BotResult<T> = Result<T, Box<dyn BotError>>;
+
+/// [BotError] wrapper around [serenity::Error]
+#[derive(Debug)]
+pub struct SerenityError(serenity::Error);
+
+impl BotError for SerenityError {
+    fn is_user_error(&self) -> bool {
+        self.forbidden()
+    }
+}
+
+impl From<serenity::Error> for SerenityError {
+    fn from(e: serenity::Error) -> Self {
+        Self::new(e)
+    }
+}
+
+impl From<SerenityError> for crate::modules::commands::Error {
+    fn from(e: SerenityError) -> Self {
+        crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
+impl From<SerenityError> for crate::modules::hook::Error {
+    fn from(e: SerenityError) -> Self {
+        crate::modules::hook::Error::Failed(e.into())
+    }
+}
+
+impl SerenityError {
+    /// Wraps the given error.
+    pub fn new(e: serenity::Error) -> Self {
+        SerenityError(e)
+    }
+
+    /// Returns true if this is an HTTP 403 error.
+    pub fn forbidden(&self) -> bool {
+        self.unsuccessful_request().map(|e| e.status_code == StatusCode::FORBIDDEN)
+            .unwrap_or(false)
+    }
+
+    /// Returns `Some(e)` if the underlying error is an http error.
+    pub fn http_error(&self) -> Option<&serenity::http::error::Error> {
+        match &self.0 {
+            serenity::Error::Http(e) => Some(e.deref()),
+            _ => None
+        }
+    }
+
+    /// Returns `Some(e)` if the underlying error is an unsuccessful http response.
+    pub fn unsuccessful_request(&self) -> Option<&serenity::http::error::ErrorResponse> {
+        self.http_error().and_then(|e| match e {
+            serenity::http::error::Error::UnsuccessfulRequest(e) => Some(e),
+            _ => None
+        })
+    }
+}
+
+impl Error for SerenityError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.0 as &dyn Error)
+    }
+}
+
+impl std::fmt::Display for SerenityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.forbidden() {
+            write!(f, "Glimbot is not permitted to do that.")
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}

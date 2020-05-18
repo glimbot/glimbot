@@ -21,7 +21,7 @@ use serenity::model::id::UserId;
 use serenity::client::Context;
 use serenity::model::prelude::Message;
 use std::borrow::Cow;
-use crate::error::BotError;
+use crate::error::{BotError, SerenityError};
 
 /// Error types for running commands based on user input.
 #[derive(thiserror::Error, Debug)]
@@ -49,6 +49,12 @@ impl BotError for Error {
 impl From<Box<dyn BotError>> for Error {
     fn from(e: Box<dyn BotError>) -> Self {
         Error::RuntimeFailure(e)
+    }
+}
+
+impl From<serenity::Error> for Error {
+    fn from(e: serenity::Error) -> Self {
+        SerenityError::from(e).into()
     }
 }
 

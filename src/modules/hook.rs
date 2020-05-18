@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use crate::dispatch::Dispatch;
 use serenity::prelude::Context;
 use serenity::model::prelude::Message;
-use crate::error::BotError;
+use crate::error::{BotError, SerenityError};
 use crate::db::DatabaseError;
 
 /// Errors that can result from the application of a hook.
@@ -52,6 +52,12 @@ impl From<Box<dyn BotError>> for Error {
 impl From<Error> for crate::modules::commands::Error {
     fn from(e: Error) -> Self {
         crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
+impl From<serenity::Error> for Error {
+    fn from(e: serenity::Error) -> Self {
+        SerenityError::from(e).into()
     }
 }
 

@@ -18,6 +18,8 @@
 //! be in a module by itself.
 use std::borrow::Cow;
 use std::fmt::Display;
+use clap::App;
+use std::io::Cursor;
 
 /// Patch type to reflect removal of `failure` crate.
 pub type Fallible<T> = anyhow::Result<T>;
@@ -41,4 +43,11 @@ impl<T, E: Display> LogErrorExt<E> for Result<T, E> {
             error!("{}", e)
         }
     }
+}
+
+/// Grabs the help string from an [App]
+pub fn help_str(app: &App) -> String {
+    let mut curs = Cursor::new(Vec::new());
+    app.write_help(&mut curs).unwrap();
+    String::from_utf8(curs.into_inner()).unwrap()
 }

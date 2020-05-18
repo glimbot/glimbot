@@ -20,14 +20,14 @@ use crate::modules::Module;
 use crate::modules::config;
 use crate::dispatch::Dispatch;
 use serenity::prelude::Context;
-use serenity::model::prelude::Message;
+use serenity::model::prelude::{Message, Role};
 use std::borrow::Cow;
 use serenity::model::id::{UserId, RoleId};
 use crate::db::cache::get_cached_connection;
 use crate::modules::hook::Error::{DeniedWithReason, NeedRole};
 use once_cell::unsync::Lazy;
 use clap::{App, Arg, AppSettings, SubCommand, ArgMatches};
-use crate::error::AnyError;
+use crate::error::{AnyError, BotError};
 use std::str::{FromStr, ParseBoolError};
 use crate::modules::commands::Command;
 use crate::args::parse_app_matches;
@@ -35,8 +35,45 @@ use crate::modules::config::{fallible_validator};
 use serenity::utils::MessageBuilder;
 use std::sync::Arc;
 use crate::db::GuildConn;
+use serenity::model::guild::Guild;
+use crate::util::help_str;
 
 static ADMIN_KEY: &'static str = "admin_role";
+
+/// Errors related to role resolution.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// There was no such role in this context.
+    #[error("No such role could be identified in this guild: {0}")]
+    NoSuchRole(Cow<'static, str>),
+    /// Some other error occurred
+    #[error("{0}")]
+    Other(#[from] AnyError)
+}
+
+impl BotError for Error {
+    fn is_user_error(&self) -> bool {
+        matches!(self, Error::NoSuchRole(_))
+    }
+}
+
+impl From<Error> for super::commands::Error {
+    fn from(e: Error) -> Self {
+        super::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
+/// Resolves a string into a role, given the guild to resolve it in.
+pub fn resolve_role(guild: &Guild, s: impl AsRef<str>) -> Result<&Role, Error> {
+    let parsed = s.as_ref().parse::<RoleId>();
+    let real_role = if let Ok(id) = parsed {
+        guild.roles.get(&id)
+    } else {
+        // Maybe it's a name?
+        guild.role_by_name(s.as_ref())
+    }.ok_or_else(|| Error::NoSuchRole(s.as_ref().to_string().into()))?;
+    Ok(real_role)
+}
 
 fn role_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Message, name: Cow<'d, str>) -> super::hook::Result<Cow<'d, str>> {
     trace!("Applying role hook.");
@@ -53,7 +90,7 @@ fn role_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Mess
     let rconn = conn.as_ref().borrow();
 
     let admin_role: RoleId = disp.get_config(&rconn, ADMIN_KEY)?.parse::<RoleId>().unwrap().into();
-    if msg.author.has_role(ctx, guild, admin_role).map_err(AnyError::boxed)? {
+    if msg.author.has_role(ctx, guild, admin_role)? {
         trace!("User is admin.");
         return Ok(name);
     }
@@ -130,16 +167,13 @@ impl Command for Roles {
         )?;
 
         let role = m.value_of("role-id").unwrap();
-        let parsed = RoleId::from_str(role);
         let guild = msg.guild(ctx).unwrap();
         let rg = guild.read();
 
-        let real_role = if let Ok(id) = parsed {
-            rg.roles.get(&id)
-        } else {
-            // Maybe it's a name?
-            rg.role_by_name(role)
-        }.ok_or_else(|| DeniedWithReason("No such role.".into()))?;
+        let role_id = {
+            let real_role = resolve_role(&rg, role).map_err(|_| DeniedWithReason("No such role.".into()))?;
+            real_role.id
+        };
 
         let reply = match m.subcommand() {
             ("set-joinable", Some(m)) => {
@@ -154,7 +188,7 @@ impl Command for Roles {
 
                 cr.as_ref().execute(
                     sql,
-                    params![real_role.id.0 as i64]
+                    params![role_id.0 as i64]
                 ).map_err(crate::db::DatabaseError::SQLError)?;
 
                 "Role updated."
@@ -169,12 +203,12 @@ impl Command for Roles {
                 };
 
                 let adding = s == "add-user";
-                let mut member = rg.member(ctx, real_user_id).map_err(AnyError::boxed)?;
+                let mut member = rg.member(ctx, real_user_id)?;
                 if adding {
-                    member.add_role(ctx, real_role.id).map_err(AnyError::boxed)?;
+                    member.add_role(ctx, role_id)?;
                     "Added role to user."
                 } else {
-                    member.remove_role(ctx, real_role.id).map_err(AnyError::boxed)?;
+                    member.remove_role(ctx, role_id)?;
                     "Removed role from user."
                 }
             },
@@ -185,20 +219,13 @@ impl Command for Roles {
             .push_codeblock_safe(reply, None)
             .build();
 
-        msg.channel_id.say(ctx, reply).map_err(AnyError::boxed)?;
+        msg.channel_id.say(ctx, reply)?;
 
         Ok(())
     }
 
     fn help(&self) -> Cow<'static, str> {
-        let c = PARSER.with(|p| (*p).clone());
-        let e = c.get_matches_from_safe(["roles", "help"].iter());
-        match e {
-            Err(clap::Error { message, .. }) => {
-                Cow::Owned(message)
-            }
-            _ => unreachable!()
-        }
+        PARSER.with(|p| help_str(&p).into())
     }
 }
 
