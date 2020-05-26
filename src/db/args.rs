@@ -18,7 +18,6 @@
 
 use clap::{App, SubCommand, Arg, AppSettings, ArgMatches};
 use crate::db::{DatabaseVersion, DB_VERSION_STRING, new_conn, get_db_version, upgrade, downgrade};
-use crate::util::Fallible;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
@@ -59,7 +58,7 @@ pub fn command_parser() -> App<'static, 'static> {
 }
 
 #[doc(hidden)]
-pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
+pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
     if let ("db", Some(m)) = m.subcommand() {
         match m.subcommand() {
             ("migrate", Some(m)) => {

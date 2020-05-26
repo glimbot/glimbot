@@ -17,7 +17,6 @@
 //! Contains the argument parser for commands relevant to the overall running of the Glimbot service.
 
 use clap::{App, SubCommand, ArgMatches};
-use crate::util::Fallible;
 use serenity::Client;
 use crate::modules::ping::ping_module;
 use crate::modules::base_hooks::base_hooks;
@@ -33,7 +32,7 @@ pub fn command_parser() -> App<'static, 'static> {
 }
 
 #[doc(hidden)]
-pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
+pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
     if let ("start", Some(_)) = m.subcommand() {
         let token = std::env::var("GLIMBOT_TOKEN")?;
         let owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;

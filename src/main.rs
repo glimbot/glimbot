@@ -33,7 +33,6 @@ use std::env;
 use std::path::Path;
 use crate::data::{data_folder, AUTHORS, VERSION};
 use clap::{App, AppSettings, Arg};
-use crate::util::Fallible;
 use log4rs::config::{Config, Appender, Logger, Root};
 use log4rs::append::console::ConsoleAppender;
 use log::LevelFilter;
@@ -51,7 +50,7 @@ pub mod dispatch;
 pub mod modules;
 pub mod error;
 
-fn main() -> Fallible<()> {
+fn main() -> anyhow::Result<()> {
     better_panic::install();
     let _ = dotenv::dotenv();
 
@@ -102,7 +101,7 @@ fn ensure_data_folder(p: impl AsRef<Path>) {
 }
 
 
-fn init_logging(l: LevelFilter) -> Fallible<()> {
+fn init_logging(l: LevelFilter) -> anyhow::Result<()> {
     let stdout = ConsoleAppender::builder()
         .encoder(Box::new(
             PatternEncoder::new("[{d(%s%.3f)(utc)}][{h({l:<5})}][{M}][{I}]  {m}{n}")

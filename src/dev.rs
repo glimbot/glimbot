@@ -19,7 +19,6 @@
 use clap::{App, SubCommand, ArgMatches, Arg, AppSettings};
 use serenity::model::id::GuildId;
 use rusqlite::Connection;
-use crate::util::Fallible;
 use crate::db::{ensure_guild_db, init_guild_db};
 use crate::db;
 
@@ -42,7 +41,7 @@ pub fn command_parser() -> App<'static, 'static> {
 }
 
 #[doc(hidden)]
-pub fn handle_matches(m: &ArgMatches) -> Fallible<()> {
+pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
     if let ("dev", Some(m)) = m.subcommand() {
         match m.subcommand() {
             ("dummy-db", Some(m)) => {
