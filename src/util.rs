@@ -21,9 +21,6 @@ use std::fmt::Display;
 use clap::App;
 use std::io::Cursor;
 
-/// Patch type to reflect removal of `failure` crate.
-pub type Fallible<T> = anyhow::Result<T>;
-
 /// Converts a string into a [Cow], unwrapping the result.
 /// # Panics
 /// If the given string is not valid UTF-8
