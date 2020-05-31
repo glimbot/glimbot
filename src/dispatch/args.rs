@@ -24,6 +24,7 @@ use crate::modules::no_bot::deny_bot_mod;
 use crate::modules::config::config_mod;
 use crate::modules::roles::roles_module;
 use crate::modules::me::me_mod;
+use crate::modules::help::help_module;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
@@ -42,6 +43,7 @@ pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
             .with_module(config_mod())
             .with_module(roles_module())
             .with_module(ping_module())
+            .with_module(help_module())
             .with_module(me_mod());
         let mut client = Client::new(token, dispatch)?;
         client.start_autosharded()?;
