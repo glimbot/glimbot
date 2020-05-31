@@ -78,8 +78,7 @@ fn main() -> anyhow::Result<()> {
     let verbosity = match matches.occurrences_of("verbosity") {
         0 => LevelFilter::Info,
         1 => LevelFilter::Debug,
-        i if i >= 2 => LevelFilter::Trace,
-        _ => unreachable!()
+        _ /* >= 2 */ => LevelFilter::Trace,
     };
 
     init_logging(verbosity)?;
