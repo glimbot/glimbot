@@ -24,11 +24,22 @@ use crate::modules::no_bot::deny_bot_mod;
 use crate::modules::config::config_mod;
 use crate::modules::roles::roles_module;
 use crate::modules::me::me_mod;
+use serenity::prelude::{TypeMapKey, Mutex};
+use std::sync::Arc;
+use serenity::client::bridge::gateway::ShardManager;
+use crate::modules::dictionary::define_mod;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
     SubCommand::with_name("start")
         .about("Starts the Glimbot service.")
+}
+
+/// Key to access the ShardManager from within the Dispatch.
+pub struct ShardManagerKey;
+
+impl TypeMapKey for ShardManagerKey {
+    type Value = Arc<Mutex<ShardManager>>;
 }
 
 #[doc(hidden)]
@@ -42,8 +53,10 @@ pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
             .with_module(config_mod())
             .with_module(roles_module())
             .with_module(ping_module())
-            .with_module(me_mod());
+            .with_module(me_mod())
+            .with_module(define_mod());
         let mut client = Client::new(token, dispatch)?;
+        client.data.write().insert::<ShardManagerKey>(client.shard_manager.clone());
         client.start_autosharded()?;
     }
 

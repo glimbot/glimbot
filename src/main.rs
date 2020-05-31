@@ -111,7 +111,9 @@ fn init_logging(l: LevelFilter) -> anyhow::Result<()> {
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
         .logger(Logger::builder().build("glimbot", l))
-        .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
+        // FIXME Remove trace logging
+        .logger(Logger::builder().build("serenity", LevelFilter::Debug))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Info))?;
 
     log4rs::init_config(config)?;
 
