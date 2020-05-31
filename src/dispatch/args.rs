@@ -45,7 +45,7 @@ impl TypeMapKey for ShardManagerKey {
 #[doc(hidden)]
 pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
     if let ("start", Some(_)) = m.subcommand() {
-        let token = std::env::var("GLIMBOT_TOKEN")?;
+        let token = std::env::var("GLIMBOT_TOKEN").map_err(|_| anyhow!("Expected ${} to be set", "GLIMBOT_TOKEN"))?;
         let owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
         let dispatch = super::Dispatch::new(owner.into())
             .with_module(base_hooks())
