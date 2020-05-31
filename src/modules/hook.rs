@@ -85,4 +85,4 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// ```
 /// fn length_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Message, name: Cow<'d, str>) -> super::hook::Result<Cow<'d, str>>
 /// ```
-pub type CommandHookFn = for <'a, 'b, 'c, 'd> fn(&'a Dispatch, &'b Context, &'c Message, Cow<'d, str>) -> Result<Cow<'d, str>>;
+pub type CommandHookFn = for <'command> fn(& Dispatch, &Context, &Message, Cow<'command, str>) -> Result<Cow<'command, str>>;

@@ -51,3 +51,13 @@ pub fn help_str(app: &App) -> String {
     app.write_help(&mut curs).unwrap();
     String::from_utf8(curs.into_inner()).unwrap()
 }
+
+/// Hashmap literal.
+#[macro_export]
+macro_rules! hashmap {
+    ($( $key: expr => $val: expr ),*) => {{
+         let mut map = ::std::collections::HashMap::new();
+         $( map.insert($key, $val); )*
+         map
+    }}
+}
