@@ -35,6 +35,9 @@ pub enum Error {
     /// The command failed for some other reason unrelated to permissions.
     #[error("{0}")]
     RuntimeFailure(Box<dyn BotError>),
+    /// Glimbot is not correctly configured
+    #[error("Glimbot is not configured for that: {0}")]
+    ConfigError(Cow<'static, str>)
 }
 
 impl BotError for Error {
