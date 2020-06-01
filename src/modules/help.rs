@@ -20,13 +20,11 @@ use std::borrow::Cow;
 
 use serenity::model::channel::Message;
 use serenity::prelude::Context;
-use serenity::utils::MessageBuilder;
 
 use crate::dispatch::Dispatch;
-use crate::error::AnyError;
-use crate::modules::Module;
 use crate::modules::commands::Command;
 use crate::modules::commands::Result;
+use crate::modules::Module;
 
 /// Command that tells an user information about installed commands
 #[derive(Copy, Clone, Debug)]
@@ -36,18 +34,17 @@ impl Command for Help {
     fn invoke(&self, disp: &Dispatch, ctx: &Context, msg: &Message, _args: Cow<str>) -> Result<()> {
         trace!("Help wanted from user {:?}", msg.author.id);
 
-        let mut builder = MessageBuilder::new();
-        for module in disp.modules().values() {
-            builder.push_bold_line_safe(module.name());
+        msg.author
+            .id
+            .create_dm_channel(&ctx.http)?
+            .send_message(&ctx.http, |msg| {
+                msg.embed(|embed| {
+                    embed.fields(disp.modules().values().filter_map(|module| {
+                        Some((module.name(), module.command_handler()?.help(), false))
+                    }))
+                })
+            })?;
 
-            builder.push_codeblock_safe(
-                &module.command_handler.as_ref().map_or(Cow::from("No command"), |cmd| cmd.help()), 
-                None
-            );
-        }
-
-        let content = builder.build();
-        msg.channel_id.say(&ctx.http, content).map_err(AnyError::boxed)?;
         Ok(())
     }
 }
