@@ -30,20 +30,25 @@ use crate::modules::Module;
 #[derive(Copy, Clone, Debug)]
 pub struct Help;
 
+const MAX_FIELDS_PER_EMBED: usize = 25;
+
 impl Command for Help {
     fn invoke(&self, disp: &Dispatch, ctx: &Context, msg: &Message, _args: Cow<str>) -> Result<()> {
         trace!("Help wanted from user {:?}", msg.author.id);
 
-        msg.author
-            .id
-            .create_dm_channel(&ctx.http)?
-            .send_message(&ctx.http, |msg| {
-                msg.embed(|embed| {
-                    embed.fields(disp.modules().values().filter_map(|module| {
-                        Some((module.name(), module.command_handler()?.help(), false))
-                    }))
-                })
+        let chan = msg.author.id.create_dm_channel(&ctx.http)?;
+
+        let mut modules = disp
+            .modules()
+            .values()
+            .filter_map(|module| Some((module.name(), module.command_handler()?.help(), false)))
+            .peekable();
+
+        while let Some(..) = modules.peek() {
+            chan.send_message(&ctx.http, |msg| {
+                msg.embed(|embed| embed.fields(modules.by_ref().take(MAX_FIELDS_PER_EMBED)))
             })?;
+        }
 
         Ok(())
     }
