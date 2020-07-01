@@ -89,11 +89,7 @@ fn role_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Mess
     let conn = get_cached_connection(guild)?;
     let rconn = conn.as_ref().borrow();
 
-    let admin_role: RoleId = disp.get_config(&rconn, ADMIN_KEY)?.parse::<RoleId>().unwrap().into();
-    if msg.author.has_role(ctx, guild, admin_role)? {
-        trace!("User is admin.");
-        return Ok(name);
-    }
+
 
     // Now we need to see if the desired command is sensitive or not.
     let module = disp.modules().get(name.as_ref()).ok_or(DeniedWithReason("No such command.".into()))?;
@@ -104,6 +100,11 @@ fn role_hook<'a, 'b, 'c, 'd>(disp: &'a Dispatch, ctx: &'b Context, msg: &'c Mess
             |r| r.get(0),
         ).map_err(crate::db::DatabaseError::SQLError)?
     } {
+        let admin_role = disp.get_config(&rconn, ADMIN_KEY)?.parse::<RoleId>().unwrap().into();
+        if msg.author.has_role(ctx, guild, admin_role)? {
+            trace!("User is admin.");
+            return Ok(name);
+        }
         trace!("Command is sensitive and user is not admin or owner.");
         let full_guild = ctx.cache.read().guild(guild).unwrap();
         let role_name = full_guild.read().roles.get(&admin_role).ok_or(DeniedWithReason("Not an admin or admin role outdated.".into()))?.name.clone();
