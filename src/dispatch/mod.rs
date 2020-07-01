@@ -32,9 +32,9 @@ use regex::Regex;
 use crate::error::{BotResult, BotError};
 use serenity::utils::MessageBuilder;
 use std::borrow::Cow;
-use crate::db::GuildConn;
+use crate::db::{GuildConn, DatabaseError};
 use crate::modules::config;
-use crate::modules::config::Validator;
+use crate::modules::config::{Validator, Error};
 
 pub mod args;
 
@@ -92,7 +92,7 @@ impl EventHandler for Dispatch {
 pub enum KeyRetrievalError {
     /// A database error occurred, including the database not containing the key.
     #[error("{0}")]
-    SQLError(#[from] crate::db::DatabaseError),
+    SQLError(crate::db::DatabaseError),
     /// The key didn't exist, or there was no default, etc.
     #[error("{0}")]
     ConfigError(#[from] config::Error)
@@ -102,7 +102,12 @@ impl KeyRetrievalError {
     fn missing_key(&self) -> bool {
         match self {
             KeyRetrievalError::SQLError(d) => {d.no_rows_returned()},
-            KeyRetrievalError::ConfigError(_) => false,
+            KeyRetrievalError::ConfigError(c) => {
+                match c {
+                    Error::NoSuchKey(_) => {true},
+                    _ => false
+                }
+            },
         }
     }
 }
@@ -129,6 +134,12 @@ impl From<KeyRetrievalError> for hook::Error {
 impl From<KeyRetrievalError> for crate::modules::commands::Error {
     fn from(e: KeyRetrievalError) -> Self {
         crate::modules::commands::Error::RuntimeFailure(e.into())
+    }
+}
+
+impl From<DatabaseError> for KeyRetrievalError {
+    fn from(e: DatabaseError) -> Self {
+        KeyRetrievalError::SQLError(e)
     }
 }
 
