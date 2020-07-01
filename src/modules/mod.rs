@@ -34,6 +34,7 @@ pub mod me;
 pub mod spam;
 pub mod owner;
 pub mod dictionary;
+pub mod help;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
 /// and one or more hooks.

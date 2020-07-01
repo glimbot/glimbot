@@ -28,6 +28,7 @@ use serenity::prelude::{TypeMapKey, Mutex};
 use std::sync::Arc;
 use serenity::client::bridge::gateway::ShardManager;
 use crate::modules::dictionary::define_mod;
+use crate::modules::help::help_module;
 
 #[doc(hidden)]
 pub fn command_parser() -> App<'static, 'static> {
@@ -54,7 +55,8 @@ pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
             .with_module(roles_module())
             .with_module(ping_module())
             .with_module(me_mod())
-            .with_module(define_mod());
+            .with_module(define_mod())
+            .with_module(help_module());
         let mut client = Client::new(token, dispatch)?;
         client.data.write().insert::<ShardManagerKey>(client.shard_manager.clone());
         client.start_autosharded()?;
