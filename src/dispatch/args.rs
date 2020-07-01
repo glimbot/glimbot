@@ -24,6 +24,10 @@ use crate::modules::no_bot::deny_bot_mod;
 use crate::modules::config::config_mod;
 use crate::modules::roles::roles_module;
 use crate::modules::me::me_mod;
+use serenity::prelude::{TypeMapKey, Mutex};
+use std::sync::Arc;
+use serenity::client::bridge::gateway::ShardManager;
+use crate::modules::dictionary::define_mod;
 use crate::modules::help::help_module;
 
 #[doc(hidden)]
@@ -32,10 +36,17 @@ pub fn command_parser() -> App<'static, 'static> {
         .about("Starts the Glimbot service.")
 }
 
+/// Key to access the ShardManager from within the Dispatch.
+pub struct ShardManagerKey;
+
+impl TypeMapKey for ShardManagerKey {
+    type Value = Arc<Mutex<ShardManager>>;
+}
+
 #[doc(hidden)]
 pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
     if let ("start", Some(_)) = m.subcommand() {
-        let token = std::env::var("GLIMBOT_TOKEN")?;
+        let token = std::env::var("GLIMBOT_TOKEN").map_err(|_| anyhow!("Expected ${} to be set", "GLIMBOT_TOKEN"))?;
         let owner = std::env::var("GLIMBOT_OWNER").unwrap_or_default().parse::<u64>()?;
         let dispatch = super::Dispatch::new(owner.into())
             .with_module(base_hooks())
@@ -43,9 +54,11 @@ pub fn handle_matches(m: &ArgMatches) -> anyhow::Result<()> {
             .with_module(config_mod())
             .with_module(roles_module())
             .with_module(ping_module())
-            .with_module(help_module())
-            .with_module(me_mod());
+            .with_module(me_mod())
+            .with_module(define_mod())
+            .with_module(help_module());
         let mut client = Client::new(token, dispatch)?;
+        client.data.write().insert::<ShardManagerKey>(client.shard_manager.clone());
         client.start_autosharded()?;
     }
 

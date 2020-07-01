@@ -593,6 +593,7 @@ dependencies = [
  "num",
  "once_cell",
  "parking_lot 0.10.0",
+ "percent-encoding",
  "pest",
  "pest_derive",
  "rand 0.7.3",
@@ -1727,9 +1728,9 @@ dependencies = [
 
 [[package]]
 name = "serenity"
-version = "0.8.4"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37d44aa085b004e306fe41feb4658d0cf8ae880664c00b29bdb8f91fdef27cca"
+checksum = "ca3dcb21751f749cd60c0779dddb08a8d339d87b79318c536eaf875b3985c22c"
 dependencies = [
  "base64 0.11.0",
  "bitflags",

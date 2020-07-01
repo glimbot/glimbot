@@ -31,6 +31,9 @@ pub mod no_bot;
 pub mod config;
 pub mod roles;
 pub mod me;
+pub mod spam;
+pub mod owner;
+pub mod dictionary;
 pub mod help;
 
 /// An integrated unit of functionality for Glimbot. A module may have a command module associated with it,
