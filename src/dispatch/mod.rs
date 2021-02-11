@@ -1,282 +1,165 @@
-//  Glimbot - A Discord anti-spam and administration bot.
-//  Copyright (C) 2020 Nick Samson
-
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU General Public License as published by
-//  the Free Software Foundation, either version 3 of the License, or
-//  (at your option) any later version.
-
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU General Public License for more details.
-
-//  You should have received a copy of the GNU General Public License
-//  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-//! Contains the primary event handler for Glimbot.
-
-use serenity::prelude::{EventHandler, Context};
+use serenity::model::id::UserId;
+use once_cell::sync::OnceCell;
+use tokio::sync::RwLock;
+use serenity::client::{Context, EventHandler};
 use serenity::model::gateway::{Ready, Activity};
-use crate::util::LogErrorExt;
-use crate::db::cache::get_cached_connection;
-use serenity::model::prelude::UserId;
-use std::sync::atomic::AtomicU64;
-use crate::modules::hook::CommandHookFn;
-use std::collections::{HashMap, HashSet};
-use crate::modules::{Module, hook};
-use crate::modules::commands::Command;
 use serenity::model::channel::Message;
-use once_cell::unsync::Lazy;
-use regex::Regex;
-use crate::error::{BotResult, BotError};
-use serenity::utils::MessageBuilder;
+use std::sync::Arc;
+use crate::module::Module;
+use linked_hash_map::LinkedHashMap;
+use std::fmt;
+use std::fmt::Formatter;
 use std::borrow::Cow;
-use crate::db::{GuildConn, DatabaseError};
-use crate::modules::config;
-use crate::modules::config::{Validator, Error};
+use crate::db::DbContext;
+use crate::error::{LogErrorExt, UserError};
+use serenity::utils::MessageBuilder;
+use tracing::Instrument;
+use futures::TryStreamExt;
+use futures::stream;
+use futures::stream::StreamExt;
 
-pub mod args;
-
-/// The primary event handler for Glimbot. Contains references to transient state for the bot.
-/// Non-transient data should live in the databases.
 pub struct Dispatch {
-    owner: AtomicU64,
-    modules: HashMap<String, Module>,
-    command_hooks: Vec<CommandHookFn>,
-    config_validator: config::Validator
-}
-
-// Thread local because Regex just uses an interior mutex if used in multiple threads, blegh.
-thread_local! {
-    static CMD_REGEX: Lazy<Regex> = Lazy::new(
-        || Regex::new(r#"^([\p{Math Symbol}\p{Punctuation}])(\w+)(?:\s*)(.*)"#).unwrap()
-    );
-}
-
-impl EventHandler for Dispatch {
-    fn message(&self, ctx: Context, new_message: Message) {
-        let res = self.handle_message(&ctx, &new_message);
-
-        if let Err(e) = res {
-            let msg = if e.is_user_error() {
-                trace!("{}", &e);
-                MessageBuilder::new()
-                    .push_codeblock_safe(e, None)
-                    .build()
-            } else {
-                error!("{}", &e);
-                MessageBuilder::new()
-                    .push_codeblock_safe("The command failed on the backend. Please contact the bot admin if this persists.", None)
-                    .build()
-            };
-
-            new_message.channel_id.say(&ctx, msg).log_error();
-        }
-    }
-
-    fn ready(&self, ctx: Context, data_about_bot: Ready) {
-        ctx.set_activity(Activity::playing("Cultist Simulator"));
-        let active_guilds = &data_about_bot.guilds;
-        active_guilds.iter().for_each(
-            |g| debug!("We're in guild {}", g.id())
-        );
-
-
-        info!("Glimbot is up and running in at least {} servers.", active_guilds.len());
-    }
-}
-
-/// Errors related to retrieving config values from guild databases.
-#[derive(thiserror::Error, Debug)]
-pub enum KeyRetrievalError {
-    /// A database error occurred, including the database not containing the key.
-    #[error("{0}")]
-    SQLError(crate::db::DatabaseError),
-    /// The key didn't exist, or there was no default, etc.
-    #[error("{0}")]
-    ConfigError(#[from] config::Error)
-}
-
-impl KeyRetrievalError {
-    fn missing_key(&self) -> bool {
-        match self {
-            KeyRetrievalError::SQLError(d) => {d.no_rows_returned()},
-            KeyRetrievalError::ConfigError(c) => {
-                match c {
-                    Error::NoSuchKey(_) => {true},
-                    _ => false
-                }
-            },
-        }
-    }
-}
-
-impl BotError for KeyRetrievalError {
-    fn is_user_error(&self) -> bool {
-        match self {
-            KeyRetrievalError::SQLError(e) => {e.is_user_error()},
-            KeyRetrievalError::ConfigError(e) => {e.is_user_error()},
-        }
-    }
-}
-
-impl From<KeyRetrievalError> for hook::Error {
-    fn from(e: KeyRetrievalError) -> Self {
-        if e.missing_key() {
-            hook::Error::DeniedWithReason("A needed configuration key was not set.".into())
-        } else {
-            hook::Error::Failed(e.into())
-        }
-    }
-}
-
-impl From<KeyRetrievalError> for crate::modules::commands::Error {
-    fn from(e: KeyRetrievalError) -> Self {
-        crate::modules::commands::Error::RuntimeFailure(e.into())
-    }
-}
-
-impl From<DatabaseError> for KeyRetrievalError {
-    fn from(e: DatabaseError) -> Self {
-        KeyRetrievalError::SQLError(e)
-    }
+    owner: UserId,
+    filters: Vec<Arc<dyn Module>>,
+    modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
 }
 
 impl Dispatch {
-    /// Creates a dispatch with the given owner.
+    pub fn owner(&self) -> UserId {
+        self.owner
+    }
+}
+
+#[derive(Debug)]
+pub struct NoSuchCommand {
+    cmd: Cow<'static, str>
+}
+
+impl NoSuchCommand {
+    pub fn new(cmd: impl Into<Cow<'static, str>>) -> Self {
+        NoSuchCommand { cmd: cmd.into() }
+    }
+}
+
+impl fmt::Display for NoSuchCommand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "No such command: {}", &self.cmd)
+    }
+}
+
+impl std::error::Error for NoSuchCommand {}
+impl_user_err_from!(NoSuchCommand);
+
+impl Dispatch {
     pub fn new(owner: UserId) -> Self {
-        Dispatch {
-            owner: AtomicU64::new(*owner.as_u64()),
-            command_hooks: Vec::new(),
-            modules: HashMap::new(),
-            config_validator: Validator::new()
+        Self {
+            owner,
+            filters: Vec::new(),
+            modules: Default::default(),
         }
     }
 
-    /// Handles an incoming new message.
-    pub fn handle_message(&self, ctx: &Context, new_message: &Message) -> BotResult<()> {
-        if new_message.is_own(&ctx) {
-            trace!("Saw a message from myself.");
-            return Ok(());
-        }
-        trace!("Saw a message from user {}", &new_message.author);
+    pub fn add_module<T: Module + 'static>(&mut self, module: T) {
+        let a = Arc::new(module);
+        let inf = a.info();
 
-        let msg = &new_message.content;
-
-        if CMD_REGEX.with(|r|r.is_match(msg)) {
-            // It's a command (probably).
-            trace!("It's a command, probably.");
-            let m = CMD_REGEX.with(|r|r.captures(msg)).unwrap();
-            let sym = m.get(1).unwrap();
-            let req_sym = if let Some(g) = &new_message.guild_id {
-                let conn = get_cached_connection(*g)?;
-                let r = conn.borrow();
-                r.command_prefix()?
-            } else {
-                '!'
-            };
-
-            if sym.as_str().chars().next().unwrap() != req_sym {
-                return Ok(());
-            }
-
-            let command_group = m.get(2).unwrap();
-
-            let command_name: Cow<str> = self.command_hooks.iter().try_fold(
-                Cow::Borrowed(command_group.as_str()),
-                |acc, next: &CommandHookFn| next(self, ctx, new_message, acc)
-            )?;
-
-            let cmd = self.resolve_command(&command_name)
-                .ok_or_else(|| hook::Error::CommandNotFound(command_name.into_owned()))?;
-
-            let args = m.get(3).unwrap().as_str().trim().to_string();
-            cmd.invoke(self, ctx, new_message, Cow::Owned(args))?;
-        }
-
-
-        Ok(())
-    }
-
-    /// Adds a module to the dispatcher.
-    pub fn with_module(mut self, m: Module) -> Self {
-        info!("Loading module {} with {} command, {} hooks, {} config values.", m.name(),
-            if m.command_handler().is_some() {
-                "a"
-            } else {
-                "no"
-            },
-            m.command_hooks().len(),
-            m.config_values().len()
+        info!("Adding module {} with sensitivity {}, {} command, {} filtering",
+              &inf.name,
+              inf.sensitivity,
+              if inf.command { "is a" } else { "is not a" },
+              if inf.does_filtering { "with" } else { "without" }
         );
 
-        let deps = m.dependencies();
-        trace!("Module {} has dependencies {:?}", m.name(), deps);
-        if deps.iter().any(|s| !self.modules.contains_key(s)) {
-            let keyset: HashSet<String> = self.modules.keys()
-                .into_iter()
-                .map(|x| x.clone())
-                .collect();
-            let diff = deps.difference(&keyset);
-            let missing_deps: HashSet<String> = diff.map(String::clone).collect();
-            panic!("Attempted to load module {}, which depends on {:?}, but all of {:?} were missing.",
-                m.name(),
-                deps,
-                missing_deps
-            )
+        if inf.does_filtering {
+            self.filters.push(a.clone());
         }
 
-        self.command_hooks.extend(m.command_hooks().iter());
-        m.config_values().iter().for_each(|v| {
-            debug!("Added config key {}", v.name());
-            self.config_validator.add_value(v.clone())
-        });
-        self.modules.insert(m.name().to_owned(), m);
-        self
+        self.modules.insert(inf.name, a);
     }
 
-    /// Resolves the given name to a command, if it exists.
-    pub fn resolve_command(&self, cmd: impl AsRef<str>) -> Option<&dyn Command> {
-        self.modules
-            .get(cmd.as_ref())
-            .and_then(|x|x.command_handler())
-            .map(|x|x.as_ref())
+    pub fn module(&self, name: &str) -> Option<&dyn Module> {
+        self.modules.get(name).map(|r| r.as_ref())
     }
 
-    /// Sets the config value to the given value after validating it.
-    pub fn set_config(&self, ctx: &Context, conn: &GuildConn, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<(), KeyRetrievalError> {
-        self.config_validator.validate(self, ctx, conn, key.as_ref(), value.as_ref())?;
-        conn.set_value(key, value)?;
+    pub fn command_module(&self, cmd: &str) -> Result<&dyn Module, NoSuchCommand> {
+        self.module(cmd)
+            .filter(|s| s.info().command)
+            .ok_or_else(|| NoSuchCommand::new(cmd.to_string()))
+    }
+
+    pub async fn handle_message(&self, ctx: &Context, new_message: &Message) -> crate::error::Result<()> {
+        let contents = &new_message.content;
+        let guild = if let Some(id) = new_message.guild_id {
+            id
+        } else {
+            return Err(UserError::new("Glimbot is not designed to respond to DMs.").into());
+        };
+        tracing::Span::current().record("g", &guild.0);
+        let first_bit = if let Some(c) = contents.chars().next() {
+            c
+        } else {
+            debug!("Somehow saw empty message.");
+            return Ok(());
+        };
+
+
+        let db = DbContext::new(guild)
+            .await?;
+
+        let command_char = db.get_or_insert("command_prefix", '!')
+            .await?;
+
+        if first_bit != command_char {
+            trace!("Ignoring non-command message");
+            return Ok(());
+        }
+
+        let cmd_raw = &contents[first_bit.len_utf8()..];
+        let command = if let Some(c) = shlex::split(cmd_raw) {
+            c
+        } else {
+            return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
+        };
+
+        let cmd = stream::iter(self.filters.iter())
+            .map(Result::Ok)
+            .try_fold(command, |acc, f: &Arc<dyn Module>| {
+                f.filter(self, ctx, new_message, acc)
+                    .instrument(debug_span!("applying filter", f=%f.info().name))
+            }).await?;
+
+        let name = &cmd[0];
+        let cmd_mod = self.command_module(name)?;
+        cmd_mod.process(self, ctx, &new_message, cmd)
+            .instrument(info_span!("running command", c=%cmd_mod.info().name))
+            .await?;
+
         Ok(())
     }
+}
 
-    /// Gets the config value. Fails if the key doesn't exist.
-    pub fn get_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> Result<String, KeyRetrievalError> {
-        self.config_validator.check_key(key.as_ref())?;
-        let o = conn.get_value(key)?;
-        Ok(o)
+#[async_trait::async_trait]
+impl EventHandler for Dispatch {
+    #[instrument(level = "info", skip(self, ctx, new_message), fields(g, u = % new_message.author.id, m = % new_message.id))]
+    async fn message(&self, ctx: Context, new_message: Message) {
+        let res = self.handle_message(&ctx, &new_message).await;
+
+        res.log_error();
+        if let Err(e) = res {
+            if e.is_user_error() {
+                let mb = MessageBuilder::new()
+                    .push_codeblock_safe(format!("{}", e), None)
+                    .build();
+
+                if let Err(e) = new_message.reply(&ctx, mb).await {
+                    error!("Failed while sending error message: {}", e);
+                }
+            }
+        }
     }
 
-    /// Gets the config value or sets the config value and *then* returns it if it doesn't already exist.
-    pub fn get_or_set_config(&self, conn: &GuildConn, key: impl AsRef<str>) -> Result<String, KeyRetrievalError> {
-        self.config_validator.check_key(key.as_ref())?;
-        let default = self.config_validator.default_for(key.as_ref())?;
-        // There is an assumption here that default is a valid member of the type.
-        let o = conn.get_or_else_set_value(
-            key.as_ref(), || default.clone()
-        )?;
-
-        Ok(o)
-    }
-
-    /// Accessor for the config validator.
-    pub fn config_validator(&self) -> &config::Validator {
-        &self.config_validator
-    }
-
-    /// Accessor for the modules in this dispatcher.
-    pub fn modules(&self) -> &HashMap<String, Module> {
-        &self.modules
+    async fn ready(&self, ctx: Context, rdy: Ready) {
+        info!("up and running in {} guilds.", rdy.guilds.len());
+        ctx.set_activity(Activity::playing("Cultist Simulator")).await;
     }
 }

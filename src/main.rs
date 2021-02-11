@@ -1,120 +1,62 @@
-//  Glimbot - A Discord anti-spam and administration bot.
-//  Copyright (C) 2020 Nick Samson
+// Glimbot - A Discord anti-spam and administration bot.
+// Copyright (C) 2020-2021 Nick Samson
 
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU General Public License as published by
-//  the Free Software Foundation, either version 3 of the License, or
-//  (at your option) any later version.
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU General Public License for more details.
+//! Main entry point for Glimbot. Additionally controls DB migration.
 
-//  You should have received a copy of the GNU General Public License
-//  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+#![feature(const_panic)]
+#![feature(try_blocks)]
 #![forbid(unsafe_code)]
-#![deny(missing_docs)]
-#![allow(dead_code)]
-#![deny(unused_imports)]
+#![deny(unused_must_use)]
 
-//! Glimbot is a general admin and anti-spam bot for Discord, written in Rust.
-//! The primary design goal is to create a robust Discord bot with high performance to
-//! manage large servers in the spirit of SweetieBot.
-
+#[macro_use] extern crate tracing;
 
 #[macro_use]
-extern crate log;
-#[macro_use]
-extern crate rusqlite;
-#[macro_use]
-extern crate anyhow;
+mod error;
+mod about;
+mod run;
+mod dispatch;
+mod module;
+mod util;
+mod db;
 
-use std::env;
-use std::path::Path;
-use crate::data::{data_folder, AUTHORS, VERSION};
-use clap::{App, AppSettings, Arg};
-use log4rs::config::{Config, Appender, Logger, Root};
-use log4rs::append::console::ConsoleAppender;
-use log::LevelFilter;
-use log4rs::encode::pattern::PatternEncoder;
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
+use clap::{SubCommand, AppSettings, ArgMatches};
 
-pub mod data;
-pub mod db;
-pub mod util;
 
-#[cfg(feature = "development")]
-pub mod dev;
-
-pub mod args;
-pub mod dispatch;
-pub mod modules;
-pub mod error;
-
-fn main() -> anyhow::Result<()> {
+#[doc(hidden)] // it's a main function
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     better_panic::install();
-    let _ = dotenv::dotenv();
-
-    let mut subcommands = vec![];
-
-    #[cfg(feature = "development")]
-        subcommands.push(dev::command_parser());
-
-    subcommands.push(db::args::command_parser());
-    subcommands.push(dispatch::args::command_parser());
-
-    let matches = App::new(env!("CARGO_PKG_NAME"))
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .author(AUTHORS)
-        .version(VERSION)
-        .subcommands(subcommands)
-        .arg(Arg::with_name("verbosity")
-            .short("v")
-            .multiple(true)
-            .help("Sets the logging verbosity level. Default: INFO")
+    let _ = dotenv::dotenv()?;
+    let sub = FmtSubscriber::builder()
+        .with_env_filter(
+            EnvFilter::from_env("GLIMBOT_LOG")
         )
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .get_matches();
+        .finish();
 
-    let verbosity = match matches.occurrences_of("verbosity") {
-        0 => LevelFilter::Info,
-        1 => LevelFilter::Debug,
-        _ /* >= 2 */ => LevelFilter::Trace,
-    };
+    tracing::subscriber::set_global_default(sub)?;
+    let matches = clap::App::new(about::BIN_NAME)
+        .version(about::VERSION)
+        .about(about::LICENSE_HEADER)
+        .author(about::AUTHOR_NAME)
+        .subcommand(
+            SubCommand::with_name("run")
+                .help("Starts Glimbot.")
+        )
+        .setting(AppSettings::SubcommandRequired)
+        .get_matches()
+        ;
 
-    init_logging(verbosity)?;
-    // Create our working directory
-    let data_dir = data_folder();
-    ensure_data_folder(&data_dir);
-
-    #[cfg(feature = "development")]
-        dev::handle_matches(&matches)?;
-
-    db::args::handle_matches(&matches)?;
-    dispatch::args::handle_matches(&matches)?;
-
-    Ok(())
-}
-
-fn ensure_data_folder(p: impl AsRef<Path>) {
-    std::fs::create_dir_all(p).expect("Couldn't create the path to default directory.");
-}
-
-
-fn init_logging(l: LevelFilter) -> anyhow::Result<()> {
-    let stdout = ConsoleAppender::builder()
-        .encoder(Box::new(
-            PatternEncoder::new("[{d(%s%.3f)(utc)}][{h({l:<5})}][{M}][{I}]  {m}{n}")
-        ))
-        .build();
-
-    let config = Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .logger(Logger::builder().build("glimbot", l))
-        .build(Root::builder().appender("stdout").build(LevelFilter::Info))?;
-
-    log4rs::init_config(config)?;
-
+    match matches.subcommand() {
+        ("run", _) => {
+            info!("Starting Glimbot.");
+            run::start_bot().await?;
+        }
+        _ => unreachable!("Unrecognized command; we should have errored out already.")
+    }
     Ok(())
 }
