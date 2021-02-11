@@ -16,3 +16,4 @@ This binary is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 binary, You can obtain one at http://mozilla.org/MPL/2.0/."#;
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const REPO_URL: &'static str = env!("CARGO_PKG_REPOSITORY");
