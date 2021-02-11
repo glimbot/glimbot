@@ -7,14 +7,21 @@
 
 //! Main entry point for Glimbot. Additionally controls DB migration.
 
+#![feature(const_panic)]
+#![feature(try_blocks)]
 #![forbid(unsafe_code)]
+#![deny(unused_must_use)]
 
+#[macro_use] extern crate tracing;
+
+#[macro_use]
+mod error;
 mod about;
 mod run;
 mod dispatch;
-mod error;
-
-#[macro_use] extern crate tracing;
+mod module;
+mod util;
+mod db;
 
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use clap::{SubCommand, AppSettings, ArgMatches};

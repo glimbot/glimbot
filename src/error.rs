@@ -4,75 +4,77 @@ use std::ops::Deref;
 use std::fmt::Formatter;
 use std::result::Result as StdRes;
 
-pub trait BotError: StdErr {
-    fn is_user_error(&self) -> bool;
-}
-
 pub trait LogErrorExt {
     fn log_error(&self);
 }
 
-pub enum Error {
-    Std { src: Box<dyn StdErr>, user_error: bool },
-    Bot(Box<dyn BotError>),
+pub struct Error {
+    err: Box<dyn StdErr + Send>,
+    user_error: bool
 }
 
 impl Error {
-    pub fn from_std_err<T: StdErr + Sized + 'static>(e: T, user_err: bool) -> Self {
-        Self::Std {
-            src: Box::new(e),
-            user_error: user_err
-        }
+    pub fn from_err<T: StdErr + Send + Sized + 'static>(e: T, user_error: bool) -> Self {
+        Self { err: Box::new(e), user_error }
     }
 
-    pub fn from_bot_err<T: BotError + Sized + 'static>(e: T) -> Self {
-        Self::Bot(Box::new(e))
+    pub const fn is_user_error(&self) -> bool {
+        self.user_error
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let e = self.deref();
+        let e = self.err.deref();
         write!(f, "{}", e)
     }
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let e = self.deref();
+        let e = self.err.deref();
         write!(f, "{:?}", e)
     }
 }
 
 impl StdErr for Error {}
 
-impl StdErr for Box<dyn BotError> {}
+#[derive(Debug)]
+pub struct UserError {
+    info: String
+}
 
-impl BotError for Error {
-    fn is_user_error(&self) -> bool {
-        match self {
-            Error::Std { user_error, .. } => {*user_error}
-            Error::Bot(e) => { e.is_user_error() }
-        }
+impl UserError {
+    pub fn new(info: impl Into<String>) -> Self {
+        UserError { info: info.into() }
     }
 }
 
-impl BotError for Box<dyn BotError> {
-    fn is_user_error(&self) -> bool {
-        self.as_ref().is_user_error()
+impl fmt::Display for UserError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.info)
     }
 }
 
-impl AsRef<dyn StdErr> for Error {
-    fn as_ref(&self) -> &(dyn StdErr + 'static) {
-        match self {
-            Error::Std { src, .. } => {src.as_ref()}
-            Error::Bot(e) => {
-                e as &dyn StdErr
-            }
-        }
+#[derive(Debug)]
+pub struct SysError {
+    info: String
+}
+
+impl SysError {
+    pub fn new(info: impl Into<String>) -> Self {
+        SysError { info: info.into() }
     }
 }
+
+impl fmt::Display for SysError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.info)
+    }
+}
+
+impl StdErr for SysError {}
+impl StdErr for UserError {}
 
 pub type Result<T> = StdRes<T, Error>;
 
@@ -88,32 +90,41 @@ impl<T> LogErrorExt for Result<T> {
     }
 }
 
-// Creates a wrapper around an error type that we can just assume isn't a user error
-// (should not be shown to user)
+/// Creates a wrapper around an error type that we can just assume isn't a user error
+/// (should not be shown to user)
+#[macro_export]
 macro_rules! impl_std_from {
     ($($src:path),+) => {
         $(
         impl From<$src> for Error {
             fn from(s: $src) -> Self {
-                Self::from_std_err(s, false)
+                Self::from_err(s, false)
             }
         }
         )+
     };
 }
 
-impl_std_from!{
-    sled::Error
+impl_std_from! {
+    sled::Error,
+    bincode::Error,
+    SysError,
+    std::io::Error
 }
 
-macro_rules! impl_bot_from {
+#[macro_export]
+macro_rules! impl_user_err_from {
     ($($src:path),+) => {
         $(
-        impl From<$src> for Error {
+        impl From<$src> for $crate::error::Error {
             fn from(s: $src) -> Self {
-                Self::from_bot_err(s, false)
+                Self::from_err(s, true)
             }
         }
         )+
     };
+}
+
+impl_user_err_from! {
+    UserError
 }
