@@ -2,6 +2,7 @@ use serenity::client::bridge::gateway::GatewayIntents;
 use crate::module::status::START_TIME;
 use once_cell::sync::Lazy;
 use crate::dispatch::ShardManKey;
+use crate::db::ensure_db;
 
 // Starts Glimbot.
 pub async fn start_bot() -> anyhow::Result<()> {
@@ -25,6 +26,7 @@ pub async fn start_bot() -> anyhow::Result<()> {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl + C");
         smc.lock().await.shutdown_all().await;
+        tokio::task::spawn_blocking(|| ensure_db().flush().expect("Unable to sync DB."))
     });
 
     dg.insert::<ShardManKey>(shard_man);
