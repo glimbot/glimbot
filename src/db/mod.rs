@@ -53,6 +53,12 @@ pub struct DbContext {
 }
 
 impl DbContext {
+    pub fn tree(&self) -> &sled::Tree {
+        &self.tree
+    }
+}
+
+impl DbContext {
     pub async fn new(guild: GuildId) -> crate::error::Result<Self> {
         let bytes = guild.0.to_be_bytes();
         let tree = task::spawn_blocking(move || {
@@ -95,6 +101,16 @@ impl DbContext {
             Ok(Err(CompareAndSwapError{current, ..})) => Ok(bincode::deserialize(&current.unwrap())?),
             Err(e) => Err(e.into())
         }
+    }
+
+    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
+        where B: AsRef<[u8]> + Send + 'static,
+              S: Serialize + DeserializeOwned {
+        let serialized = bincode::serialize(&val)?;
+        self.do_async(move |c| {
+            c.tree.insert(key, serialized).map(|_|())
+        }).await?;
+        Ok(())
     }
 
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>

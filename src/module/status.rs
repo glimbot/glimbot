@@ -3,7 +3,7 @@ use crate::module::{ModInfo, Sensitivity, Module};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use serenity::client::Context;
-use crate::dispatch::Dispatch;
+use crate::dispatch::{Dispatch, ShardManKey};
 use serenity::model::channel::Message;
 use std::time::{Instant, Duration};
 use systemstat::Platform;
@@ -17,6 +17,7 @@ static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
         sensitivity: Sensitivity::Owner,
         does_filtering: false,
         command: true,
+        config_values: Vec::new()
     }
 });
 
@@ -46,7 +47,17 @@ impl Module for StatusModule {
 
         let used_mem_mib = (mem.total.0 - mem.free.0) / BYTES_IN_MIB;
         let total_mem_mib = mem.total.0 / BYTES_IN_MIB;
-        let shard = ctx.shard_id;
+
+        let shard_man = {
+            ctx.data.read().await.get::<ShardManKey>().expect("missing shard manager somehow").clone()
+        };
+
+        let shard = ctx.shard_id as usize;
+        let total_shards = shard_man.lock()
+            .await
+            .shards_instantiated()
+            .await
+            .len();
 
         orig.channel_id.send_message(ctx, |e| {
             e.embed(|emb| {
@@ -54,11 +65,12 @@ impl Module for StatusModule {
                 .color(GLIM_COLOR)
                     .title("Bot Status")
                     .url(REPO_URL)
-                    .field("Bot Uptime", pretty_elapsed, false)
-                    .field("Sys Uptime", pretty_sys_uptime, false)
                     .field("CPU Load", format!("{:5.2} {:5.2} {:5.2}", load.one, load.five, load.fifteen), true)
                     .field("Memory Usage", format!("{:5} / {:5} MiB", used_mem_mib, total_mem_mib), true)
-                    .field("Shard", shard, false)
+                    .field("Uptime", pretty_elapsed, false)
+                    .field("Sys Uptime", pretty_sys_uptime, false)
+                    .field("Shard Id", shard, true)
+                    .field("Shard Count", total_shards, true)
             }).reference_message(orig)
         })
             .await
