@@ -21,6 +21,7 @@ impl Error {
     pub const fn is_user_error(&self) -> bool {
         self.user_error
     }
+}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -98,7 +99,6 @@ impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'sta
     fn into_user_err(self) -> Result<T> {
         self.map_err(|e| Error::from_err(e, true))
     }
-}
 
     fn into_sys_err(self) -> Result<T> {
         self.map_err(|e| Error::from_err(e, false))
