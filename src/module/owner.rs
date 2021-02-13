@@ -8,12 +8,9 @@ use std::error::Error;
 use serenity::model::channel::Message;
 
 static MOD_INFO: Lazy<ModInfo> = Lazy::new(|| {
-    ModInfo {
-        name: "owner-check",
-        sensitivity: Sensitivity::Low,
-        does_filtering: true,
-        command: false
-    }
+    ModInfo::with_name("owner-check")
+        .with_sensitivity(Sensitivity::Low)
+        .with_filter(true)
 });
 
 pub struct OwnerFilter;
@@ -38,19 +35,19 @@ impl Module for OwnerFilter {
         &MOD_INFO
     }
 
-    async fn filter(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<Vec<String>> {
-        let cmd = command.first().unwrap();
+    async fn filter(&self, dis: &Dispatch, ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+        let cmd = name.as_str();
         let mod_info = dis.command_module(cmd)?;
         if mod_info.info().sensitivity == Sensitivity::Owner {
             if orig.author.id == dis.owner() {
                 trace!("Command invoked by owner.");
-                Ok(command)
+                Ok(name)
             } else {
                 Err(MustBeBotOwner.into())
             }
         } else {
             trace!("Command not owner-only.");
-            Ok(command)
+            Ok(name)
         }
     }
 }

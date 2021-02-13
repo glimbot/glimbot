@@ -26,6 +26,12 @@ mod db;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use clap::{SubCommand, AppSettings, ArgMatches};
 
+#[cfg(not(target_env = "msvc"))]
+use jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[doc(hidden)] // it's a main function
 #[tokio::main]

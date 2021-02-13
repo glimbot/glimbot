@@ -53,6 +53,11 @@ pub struct DbContext {
 }
 
 impl DbContext {
+    pub fn tree(&self) -> &sled::Tree {
+        &self.tree
+    }
+
+impl DbContext {
     pub async fn new(guild: GuildId) -> crate::error::Result<Self> {
         let bytes = guild.0.to_be_bytes();
         let tree = task::spawn_blocking(move || {
@@ -87,14 +92,24 @@ impl DbContext {
     pub fn get_or_insert_sync<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
         where B: AsRef<[u8]>,
               S: Serialize + DeserializeOwned {
-        let serialized = bincode::serialize(&def)?;
+        let serialized = rmp_serde::to_vec(&def)?;
         let csr = self.tree.compare_and_swap(key, None as Option<&[u8]>, Some(serialized));
 
         match csr {
             Ok(Ok(())) => {self.tree.flush()?; Ok(def)}, // this is the only case in which we actually changed something
-            Ok(Err(CompareAndSwapError{current, ..})) => Ok(bincode::deserialize(&current.unwrap())?),
+            Ok(Err(CompareAndSwapError{current, ..})) => Ok(rmp_serde::from_read(current.unwrap().as_ref())?),
             Err(e) => Err(e.into())
         }
+    }
+
+    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
+        where B: AsRef<[u8]> + Send + 'static,
+              S: Serialize + DeserializeOwned {
+        let serialized = rmp_serde::to_vec(&val)?;
+        self.do_async(move |c| {
+            c.tree.insert(key, serialized).map(|_|())
+        }).await?;
+        Ok(())
     }
 
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
@@ -103,7 +118,7 @@ impl DbContext {
         self.do_async(move |s| {
             let res: crate::error::Result<_> = try {
                 s.tree.get(key)?
-                    .map_or(Ok(None), |v| bincode::deserialize(&v))?
+                    .map_or(Ok(None), |v| rmp_serde::from_read(v.as_ref()))?
             };
             res
         }).await

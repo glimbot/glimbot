@@ -21,7 +21,6 @@ impl Error {
     pub const fn is_user_error(&self) -> bool {
         self.user_error
     }
-}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -90,6 +89,22 @@ impl<T> LogErrorExt for Result<T> {
     }
 }
 
+pub trait IntoBotErr<T>: Sized {
+    fn into_user_err(self) -> Result<T>;
+    fn into_sys_err(self) -> Result<T>;
+}
+
+impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'static {
+    fn into_user_err(self) -> Result<T> {
+        self.map_err(|e| Error::from_err(e, true))
+    }
+}
+
+    fn into_sys_err(self) -> Result<T> {
+        self.map_err(|e| Error::from_err(e, false))
+    }
+}
+
 /// Creates a wrapper around an error type that we can just assume isn't a user error
 /// (should not be shown to user)
 #[macro_export]
@@ -107,9 +122,11 @@ macro_rules! impl_std_from {
 
 impl_std_from! {
     sled::Error,
-    bincode::Error,
+    rmp_serde::decode::Error,
+    rmp_serde::encode::Error,
     SysError,
-    std::io::Error
+    std::io::Error,
+    serenity::Error
 }
 
 #[macro_export]
