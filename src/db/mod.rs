@@ -56,7 +56,6 @@ impl DbContext {
     pub fn tree(&self) -> &sled::Tree {
         &self.tree
     }
-}
 
 impl DbContext {
     pub async fn new(guild: GuildId) -> crate::error::Result<Self> {
