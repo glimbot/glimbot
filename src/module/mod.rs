@@ -5,27 +5,60 @@ use std::fmt;
 use std::fmt::Formatter;
 use serenity::model::channel::Message;
 use std::sync::Arc;
+use std::cmp::Ordering;
 
 pub mod status;
 pub mod owner;
 pub mod base_filter;
 pub mod shutdown;
+pub mod privilege;
+pub mod conf;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Sensitivity {
-    Low, // Anyone should be able to run at any time
-    Medium, // Anyone can run, but prone to spamming
-    High, // Sensitive commands related to managing users/spam,
-    Owner // Only owner should be able to run
+    Low,
+    // Anyone should be able to run at any time
+    Medium,
+    // Anyone can run, but prone to spamming
+    High,
+    // Sensitive commands related to managing users/spam,
+    Owner, // Only owner should be able to run
+}
+
+impl PartialOrd for Sensitivity {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (x, y) if x == y => Some(Ordering::Equal),
+            (Self::Owner, _) | (_, Self::Owner) => None,
+            (Self::High, o) => match o {
+                Sensitivity::Low |
+                Sensitivity::Medium => { Ordering::Greater }
+                Sensitivity::High => { Ordering::Equal }
+                _ => unreachable!()
+            }.into(),
+            (Self::Medium, o) => match o {
+                Sensitivity::Low => Ordering::Greater,
+                Sensitivity::Medium => Ordering::Equal,
+                Sensitivity::High => Ordering::Less,
+                _ => unreachable!()
+            }.into(),
+            (Self::Low, o) => match o {
+                Sensitivity::Low => {Ordering::Equal}
+                Sensitivity::Medium |
+                Sensitivity::High => {Ordering::Less}
+                _ => unreachable!()
+            }.into()
+        }
+    }
 }
 
 impl fmt::Display for Sensitivity {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Sensitivity::Low => {"low"}
-            Sensitivity::Medium => {"medium"}
-            Sensitivity::High => {"high"}
-            Sensitivity::Owner => {"owner"}
+            Sensitivity::Low => { "low" }
+            Sensitivity::Medium => { "medium" }
+            Sensitivity::High => { "high" }
+            Sensitivity::Owner => { "owner" }
         };
         f.write_str(s)
     }
@@ -36,7 +69,7 @@ pub struct ModInfo {
     pub sensitivity: Sensitivity,
     pub does_filtering: bool,
     pub command: bool,
-    pub config_values: Vec<Arc<dyn config::Validator>>
+    pub config_values: Vec<Arc<dyn config::Validator>>,
 }
 
 impl ModInfo {
@@ -46,7 +79,7 @@ impl ModInfo {
             sensitivity: Sensitivity::Owner,
             does_filtering: false,
             command: false,
-            config_values: Vec::new()
+            config_values: Vec::new(),
         }
     }
 

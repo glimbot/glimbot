@@ -122,7 +122,8 @@ macro_rules! impl_std_from {
 
 impl_std_from! {
     sled::Error,
-    bincode::Error,
+    rmp_serde::decode::Error,
+    rmp_serde::encode::Error,
     SysError,
     std::io::Error,
     serenity::Error

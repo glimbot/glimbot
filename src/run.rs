@@ -10,6 +10,8 @@ pub async fn start_bot() -> anyhow::Result<()> {
     let mut dispatch = crate::dispatch::Dispatch::new(std::env::var("GLIMBOT_OWNER").expect("Couldn't find owner information.").parse().expect("Invalid owner token."));
     dispatch.add_module(crate::module::base_filter::BaseFilter);
     dispatch.add_module(crate::module::owner::OwnerFilter);
+    dispatch.add_module(crate::module::privilege::PrivilegeFilter);
+    dispatch.add_module(crate::module::conf::ConfigModule);
     dispatch.add_module(crate::module::status::StatusModule);
     dispatch.add_module(crate::module::shutdown::Shutdown);
 

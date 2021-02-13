@@ -29,7 +29,13 @@ pub struct Dispatch {
     owner: UserId,
     filters: Vec<Arc<dyn Module>>,
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
-    config_values: HashMap<&'static str, Arc<dyn config::Validator>>
+    config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>
+}
+
+impl Dispatch {
+    pub fn config_values(&self) -> &LinkedHashMap<&'static str, Arc<dyn config::Validator>> {
+        &self.config_values
+    }
 }
 
 pub struct ShardManKey;
