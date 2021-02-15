@@ -16,7 +16,7 @@ pub struct ConfigModule;
 
 /// Command to set bot config values for this guild.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "config", no_version, setting = clap::AppSettings::ColorNever)]
+#[structopt(name = "config", no_version)]
 enum ConfigOpt {
     /// Sets a bot config value
     Set {

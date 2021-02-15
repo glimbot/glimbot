@@ -13,12 +13,14 @@
 #![deny(unused_must_use)]
 
 #[macro_use] extern crate tracing;
+#[macro_use] extern crate serde;
 
 #[macro_use]
 mod error;
+#[macro_use]
+mod dispatch;
 mod about;
 mod run;
-mod dispatch;
 mod module;
 mod util;
 mod db;

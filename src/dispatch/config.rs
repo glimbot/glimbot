@@ -2,7 +2,6 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::str::FromStr;
-use std::marker::PhantomData;
 use sled::IVec;
 use std::any::Any;
 use crate::db::DbContext;
@@ -72,6 +71,21 @@ impl<T> FromStrWithCtx for T where T: FromStr, T::Err: std::error::Error + Send 
         Self::from_str(s)
     }
 }
+
+#[macro_export]
+macro_rules! impl_not_user_settable {
+    ($t:path) => {
+        #[async_trait::async_trait]
+        impl FromStrWithCtx for $t {
+            type Err = $crate::error::UserError;
+
+            async fn from_str_with_ctx(_s: &str, _ctx: &Context, _gid: GuildId) -> Result<Self, Self::Err> {
+                Err(UserError::new("This config value cannot be set by users."))
+            }
+        }
+    };
+}
+
 
 #[async_trait::async_trait]
 pub trait Validator: Send + Sync + Any + DowncastSync + 'static {

@@ -13,6 +13,7 @@ pub mod base_filter;
 pub mod shutdown;
 pub mod privilege;
 pub mod conf;
+pub mod roles;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Sensitivity {

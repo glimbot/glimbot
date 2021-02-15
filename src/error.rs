@@ -105,6 +105,24 @@ impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'sta
     }
 }
 
+pub trait SerenityErrExt: Sized {
+    fn into_glim_err(self) -> Error;
+}
+
+impl From<serenity::Error> for Error {
+    fn from(e: serenity::Error) -> Self {
+        match e {
+            serenity::Error::Model(me) => {
+                match me {
+                    serenity::model::ModelError::MessageTooLong(_) => {Self::from_err(me, false)}
+                    me => Self::from_err(me, true)
+                }
+            }
+            e => Self::from_err(e, false)
+        }
+    }
+}
+
 /// Creates a wrapper around an error type that we can just assume isn't a user error
 /// (should not be shown to user)
 #[macro_export]
@@ -125,8 +143,7 @@ impl_std_from! {
     rmp_serde::decode::Error,
     rmp_serde::encode::Error,
     SysError,
-    std::io::Error,
-    serenity::Error
+    std::io::Error
 }
 
 #[macro_export]

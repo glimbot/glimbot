@@ -13,6 +13,7 @@ pub async fn start_bot() -> anyhow::Result<()> {
     dispatch.add_module(crate::module::privilege::PrivilegeFilter);
     dispatch.add_module(crate::module::conf::ConfigModule);
     dispatch.add_module(crate::module::status::StatusModule);
+    dispatch.add_module(crate::module::roles::RoleModule);
     dispatch.add_module(crate::module::shutdown::Shutdown);
 
     let mut client = serenity::Client::builder(std::env::var("GLIMBOT_TOKEN").expect("Didn't find a token."))

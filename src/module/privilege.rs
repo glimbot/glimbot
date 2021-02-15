@@ -12,12 +12,27 @@ use crate::db::DbContext;
 use std::fmt;
 use std::fmt::Formatter;
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct VerifiedRole(u64);
 
 impl VerifiedRole {
     pub fn into_inner(self) -> RoleId {
         self.0.into()
+    }
+
+    pub async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
+        let rid = self.into_inner();
+        let g = guild.to_guild_cached(ctx).await
+            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+        let role = g.roles.get(&rid)
+            .ok_or_else(|| UserError::new("No such role in this guild."))?;
+        Ok(role.name.clone())
+    }
+
+    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+        self.to_role_name(ctx, guild)
+            .await
+            .unwrap_or_else(|_| self.to_string())
     }
 }
 
