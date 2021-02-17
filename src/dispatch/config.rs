@@ -1,16 +1,19 @@
-use std::sync::Arc;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use std::str::FromStr;
-use sled::IVec;
 use std::any::Any;
-use crate::db::DbContext;
-use crate::error::{IntoBotErr, SysError, UserError};
+use std::fmt;
+use std::fmt::Formatter;
+use std::str::FromStr;
+use std::sync::Arc;
+
 use downcast_rs::DowncastSync;
 use downcast_rs::impl_downcast;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serenity::client::Context;
-use serenity::model::id::GuildId;
-use std::fmt;
+use serenity::model::id::{GuildId, RoleId, ChannelId};
+use sled::IVec;
+
+use crate::db::DbContext;
+use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
 
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 
@@ -115,5 +118,101 @@ impl<T> Validator for Value<T> where T: ValueType {
     fn display_value(&self, v: IVec) -> crate::error::Result<String> {
         let v: T = rmp_serde::from_read(v.as_ref())?;
         Ok(v.to_string())
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct VerifiedRole(u64);
+
+impl VerifiedRole {
+    pub fn into_inner(self) -> RoleId {
+        self.0.into()
+    }
+
+    pub async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
+        let rid = self.into_inner();
+        let g = guild.to_guild_cached(ctx).await
+            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+        let role = g.roles.get(&rid)
+            .ok_or_else(|| UserError::new("No such role in this guild."))?;
+        Ok(role.name.clone())
+    }
+
+    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+        self.to_role_name(ctx, guild)
+            .await
+            .unwrap_or_else(|_| self.to_string())
+    }
+}
+
+#[async_trait::async_trait]
+impl FromStrWithCtx for VerifiedRole {
+    type Err = crate::error::Error;
+
+    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
+        let guild_info = gid.to_guild_cached(ctx)
+            .await
+            .ok_or(GuildNotInCache)?;
+        let role_id = if let Ok(id) = RoleId::from_str(s) {
+            guild_info.roles.get(&id)
+        } else {
+            guild_info.role_by_name(s)
+        }.ok_or_else(|| UserError::new(format!("No such role in this guild: {}", s)))?;
+
+        Ok(Self(role_id.id.0))
+    }
+}
+
+impl fmt::Display for VerifiedRole {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "<@&{}>", self.0)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct VerifiedChannel(ChannelId);
+
+#[async_trait::async_trait]
+impl FromStrWithCtx for VerifiedChannel {
+    type Err = crate::error::Error;
+
+    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
+        let guild_info = gid.to_guild_cached(ctx)
+            .await
+            .ok_or(GuildNotInCache)?;
+        let chan_id = if let Ok(id) = ChannelId::from_str(s) {
+            guild_info.channels.get(&id).map(|c| c.id)
+        } else {
+            guild_info.channel_id_from_name(ctx, s).await
+        }.ok_or_else(|| UserError::new(format!("No such channel in this guild: {}", s)))?;
+
+        Ok(Self(chan_id))
+    }
+}
+
+impl fmt::Display for VerifiedChannel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "<#{}>", self.0)
+    }
+}
+
+impl VerifiedChannel {
+    pub fn into_inner(self) -> ChannelId {
+        self.0
+    }
+
+    pub async fn to_channel_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
+        let cid = self.into_inner();
+        let g = guild.to_guild_cached(ctx).await
+            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+        let role = g.channels.get(&cid)
+            .ok_or_else(|| UserError::new(format!("No such channel in this guild: {}", &self)))?;
+        Ok(role.name.clone())
+    }
+
+    pub async fn to_channel_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+        self.to_channel_name(ctx, guild)
+            .await
+            .unwrap_or_else(|_| self.to_string())
     }
 }

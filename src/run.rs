@@ -14,6 +14,7 @@ pub async fn start_bot() -> anyhow::Result<()> {
     dispatch.add_module(crate::module::conf::ConfigModule);
     dispatch.add_module(crate::module::status::StatusModule);
     dispatch.add_module(crate::module::roles::RoleModule);
+    dispatch.add_module(crate::module::moderation::ModerationModule);
     dispatch.add_module(crate::module::shutdown::Shutdown);
 
     let mut client = serenity::Client::builder(std::env::var("GLIMBOT_TOKEN").expect("Didn't find a token."))
@@ -29,7 +30,6 @@ pub async fn start_bot() -> anyhow::Result<()> {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl + C");
         smc.lock().await.shutdown_all().await;
-        tokio::task::spawn_blocking(|| ensure_db().flush().expect("Unable to sync DB."))
     });
 
     dg.insert::<ShardManKey>(shard_man);

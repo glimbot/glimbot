@@ -1,64 +1,17 @@
-use crate::module::{Module, ModInfo, Sensitivity};
-use once_cell::sync::Lazy;
-use crate::dispatch::{config, Dispatch};
-use serenity::model::id::{RoleId, GuildId};
-use std::ops::Deref;
-use crate::dispatch::config::FromStrWithCtx;
-use serenity::client::Context;
-use std::str::FromStr;
-use crate::error::{IntoBotErr, SysError, UserError};
-use serenity::model::channel::Message;
-use crate::db::DbContext;
 use std::fmt;
 use std::fmt::Formatter;
+use std::ops::Deref;
+use std::str::FromStr;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct VerifiedRole(u64);
-
-impl VerifiedRole {
-    pub fn into_inner(self) -> RoleId {
-        self.0.into()
-    }
-
-    pub async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
-        let rid = self.into_inner();
-        let g = guild.to_guild_cached(ctx).await
-            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
-        let role = g.roles.get(&rid)
-            .ok_or_else(|| UserError::new("No such role in this guild."))?;
-        Ok(role.name.clone())
-    }
-
-    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
-        self.to_role_name(ctx, guild)
-            .await
-            .unwrap_or_else(|_| self.to_string())
-    }
-}
-
-#[async_trait::async_trait]
-impl FromStrWithCtx for VerifiedRole {
-    type Err = crate::error::Error;
-
-    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
-        let guild_info = gid.to_guild_cached(ctx)
-            .await
-            .ok_or_else(|| SysError::new("Couldn't find guild in cache"))?;
-        let role_id = if let Ok(id) = RoleId::from_str(s) {
-            guild_info.roles.get(&id)
-        } else {
-            guild_info.role_by_name(s)
-        }.ok_or_else(|| UserError::new(format!("No such role in this guild: {}", s)))?;
-
-        Ok(Self(role_id.id.0))
-    }
-}
-
-impl fmt::Display for VerifiedRole {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "<@&{}>", self.0)
-    }
-}
+use once_cell::sync::Lazy;
+use serenity::client::Context;
+use serenity::model::channel::Message;
+use serenity::model::id::{GuildId, RoleId};
+use crate::db::DbContext;
+use crate::dispatch::{config, Dispatch};
+use crate::dispatch::config::{FromStrWithCtx, VerifiedRole};
+use crate::error::{IntoBotErr, SysError, UserError};
+use crate::module::{ModInfo, Module, Sensitivity};
 
 pub struct PrivilegeFilter;
 

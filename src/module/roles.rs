@@ -11,7 +11,7 @@ use crate::util::ClapExt;
 use crate::db::DbContext;
 use std::collections::HashSet;
 use serde::Serialize;
-use crate::module::privilege::VerifiedRole;
+use crate::dispatch::config::VerifiedRole;
 use itertools::Itertools;
 use futures::StreamExt;
 use crate::error::{UserError, SysError};

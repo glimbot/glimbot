@@ -14,6 +14,7 @@ pub mod shutdown;
 pub mod privilege;
 pub mod conf;
 pub mod roles;
+pub(crate) mod moderation;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Sensitivity {
@@ -105,6 +106,8 @@ impl ModInfo {
     }
 }
 
+impl_err!(UnimplementedModule, "This module hasn't been finished yet.", true);
+
 #[async_trait::async_trait]
 pub trait Module: Sync + Send {
     fn info(&self) -> &ModInfo;
@@ -114,7 +117,7 @@ pub trait Module: Sync + Send {
     }
 
     async fn process(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
-        unimplemented!()
+        Err(UnimplementedModule.into())
     }
 }
 

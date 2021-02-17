@@ -162,3 +162,27 @@ macro_rules! impl_user_err_from {
 impl_user_err_from! {
     UserError
 }
+
+#[macro_export]
+macro_rules! impl_err {
+    ($name:ident, $message:expr, $user_error:expr) => {
+        #[derive(Debug)]
+        pub struct $name;
+
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                write!(f, "{}", $message)
+            }
+        }
+
+        impl ::std::error::Error for $name {}
+
+        impl From<$name> for $crate::error::Error {
+            fn from(s: $name) -> Self {
+                Self::from_err(s, $user_error)
+            }
+        }
+    };
+}
+
+impl_err!(GuildNotInCache, "Couldn't find guild in cache.", false);
