@@ -8,6 +8,9 @@ use serde::{Serialize, Deserialize};
 use serde::de::DeserializeOwned;
 use sled::CompareAndSwapError;
 use serenity::futures::StreamExt;
+use std::borrow::Cow;
+use std::ops::Deref;
+use smallvec::SmallVec;
 
 pub fn default_data_folder() -> PathBuf {
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -72,6 +75,23 @@ impl DbContext {
         })
     }
 
+    pub async fn with_namespace(guild: GuildId, namespace: &str) -> crate::error::Result<Self> {
+        let bytes = guild.0.to_be_bytes();
+        // Avoids allocation in a hotpath.
+        let mut name = SmallVec::<[_; 64]>::with_capacity(bytes.len() + namespace.as_bytes().len());
+        name.extend_from_slice(&bytes[..]);
+        name.extend_from_slice(namespace.as_bytes());
+        let tree = task::spawn_blocking(move || {
+            let db = db();
+            db.open_tree(name)
+        }).await.unwrap()?;
+
+        Ok(Self {
+            guild,
+            tree
+        })
+    }
+
     pub async fn do_async<F, R>(&self, f: F) -> R where F: (FnOnce(Self) -> R) + Send + 'static, R: Send + 'static {
         let c = self.clone();
         task::spawn_blocking(move || f(c)).await.unwrap()
@@ -123,5 +143,37 @@ impl DbContext {
             };
             res
         }).await
+    }
+}
+
+#[derive(Clone)]
+pub struct NamespacedDbContext {
+    namespace: Cow<'static, str>,
+    base: DbContext,
+}
+
+
+impl Deref for NamespacedDbContext {
+    type Target = DbContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl NamespacedDbContext {
+    pub async fn new<N>(guild: GuildId, namespace: N) -> crate::error::Result<Self> where N: Into<Cow<'static, str>> {
+        let namespace = namespace.into();
+        let base = DbContext::with_namespace(guild, &namespace)
+            .await?;
+        Ok(Self {
+            namespace,
+            base,
+        })
+    }
+
+    /// Workaround for backwards compat.
+    pub async fn config_ctx(guild: GuildId) -> crate::error::Result<Self> {
+        Self::new(guild, "").await
     }
 }

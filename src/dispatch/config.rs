@@ -129,8 +129,30 @@ impl VerifiedRole {
         self.0.into()
     }
 
+    pub fn into_be_bytes(self) -> [u8; 8] {
+        self.0.to_be_bytes()
+    }
+
     pub async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let rid = self.into_inner();
+        rid.to_role_name(ctx, guild).await
+    }
+
+    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+        self.into_inner().to_role_name_or_id(ctx, guild).await
+    }
+}
+
+#[async_trait::async_trait]
+pub trait RoleExt {
+    async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String>;
+    async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String;
+}
+
+#[async_trait::async_trait]
+impl RoleExt for RoleId {
+    async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
+        let rid = *self;
         let g = guild.to_guild_cached(ctx).await
             .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
         let role = g.roles.get(&rid)
@@ -138,7 +160,7 @@ impl VerifiedRole {
         Ok(role.name.clone())
     }
 
-    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+    async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
         self.to_role_name(ctx, guild)
             .await
             .unwrap_or_else(|_| self.to_string())

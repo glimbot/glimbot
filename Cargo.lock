@@ -647,6 +647,7 @@ dependencies = [
  "shellexpand",
  "shlex",
  "sled",
+ "smallvec",
  "strip-ansi-escapes",
  "structopt",
  "systemstat",

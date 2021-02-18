@@ -52,6 +52,7 @@ downcast-rs = "1.2"
 jemallocator = "0.3"
 itertools = "0.10"
 strip-ansi-escapes = "0.1.0"
+smallvec = "1.6"
 
 [dependencies.serenity]
 version = "0.10"

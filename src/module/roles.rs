@@ -1,6 +1,6 @@
 use crate::module::{Module, ModInfo, Sensitivity};
 use serenity::model::prelude::RoleId;
-use crate::dispatch::config::FromStrWithCtx;
+use crate::dispatch::config::{FromStrWithCtx, RoleExt};
 use serenity::client::Context;
 use serenity::model::id::GuildId;
 use once_cell::sync::Lazy;
@@ -8,7 +8,7 @@ use serenity::model::channel::Message;
 use crate::dispatch::Dispatch;
 use structopt::StructOpt;
 use crate::util::ClapExt;
-use crate::db::DbContext;
+use crate::db::{DbContext, NamespacedDbContext};
 use std::collections::HashSet;
 use serde::Serialize;
 use crate::dispatch::config::VerifiedRole;
@@ -16,6 +16,7 @@ use itertools::Itertools;
 use futures::StreamExt;
 use crate::error::{UserError, SysError};
 use serenity::utils::MessageBuilder;
+use sled::IVec;
 
 pub struct RoleModule;
 
@@ -34,10 +35,8 @@ pub enum RoleOpt {
         role: String
     },
     /// Lists all joinable roles.
-    ListJoinable
+    ListJoinable,
 }
-
-type JoinableRoles = HashSet<VerifiedRole>;
 
 #[async_trait::async_trait]
 impl Module for RoleModule {
@@ -52,7 +51,8 @@ impl Module for RoleModule {
     async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
         let role_opts = RoleOpt::from_iter_with_help(command)?;
         let gid = orig.guild_id.unwrap();
-        let db = DbContext::new(gid).await?;
+        let db = NamespacedDbContext::new(gid, JOINABLE_ROLES_KEY)
+            .await?;
 
         let message = match &role_opts {
             RoleOpt::Join { .. } |
@@ -66,11 +66,11 @@ impl Module for RoleModule {
                 let vrole = VerifiedRole::from_str_with_ctx(role, ctx, gid)
                     .await?;
 
-                let roles = db
-                    .get_or_insert(JOINABLE_ROLES_KEY, JoinableRoles::new())
-                    .await?;
+                let is_joinable = db.do_async(move |c| {
+                    c.tree().contains_key(vrole.into_be_bytes())
+                }).await?;
 
-                if !roles.contains(&vrole) {
+                if !is_joinable {
                     return Err(UserError::new(format!("{} is not user-joinable.", vrole.to_role_name_or_id(ctx, gid).await)).into());
                 }
 
@@ -81,34 +81,38 @@ impl Module for RoleModule {
                     .await?;
 
                 match &role_opts {
-                    RoleOpt::Join {..} => {
+                    RoleOpt::Join { .. } => {
                         mem.add_role(ctx, vrole.into_inner()).await?;
                         "Added role.".to_string()
-                    },
+                    }
                     _ => {
                         mem.remove_role(ctx, vrole.into_inner()).await?;
                         "Removed role.".to_string()
                     }
                 }
-            },
+            }
             RoleOpt::ListJoinable => {
-                let roles = db
-                    .get_or_insert(JOINABLE_ROLES_KEY, JoinableRoles::new())
-                    .await?;
+                let roles: Result<Vec<RoleId>, crate::error::Error> = db.do_async(|c| {
+                    c.tree().iter()
+                        .keys()
+                        .map_ok(|v| {
+                            let mut bytes = [0u8; 8];
+                            bytes.copy_from_slice(v.as_ref());
+                            RoleId::from(u64::from_be_bytes(bytes))
+                        })
+                        .try_collect()
+                        .map_err(Into::into)
+                }).await;
+                let roles: Vec<_> = futures::stream::iter(roles?
+                    .into_iter())
+                    .then(|r| async move { r.to_role_name_or_id(ctx, gid).await })
+                    .collect()
+                    .await;
 
                 if roles.is_empty() {
                     "No joinable roles.".to_string()
                 } else {
-                    let joinable_roles = tokio_stream::iter(roles)
-                        .then(|r| async move {
-                            r.to_role_name(ctx, gid)
-                                .await
-                                .unwrap_or_else(|_| r.to_string())
-                        })
-                        .collect::<Vec<_>>()
-                        .await
-                        .join(", ");
-                    joinable_roles
+                    roles.join(", ")
                 }
             }
         };

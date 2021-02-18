@@ -9,6 +9,7 @@
 
 #![feature(const_panic)]
 #![feature(try_blocks)]
+#![feature(array_chunks)]
 #![forbid(unsafe_code)]
 #![deny(unused_must_use)]
 

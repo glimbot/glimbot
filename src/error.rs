@@ -15,6 +15,9 @@ pub struct Error {
 
 impl Error {
     pub fn from_err<T: StdErr + Send + Sized + 'static>(e: T, user_error: bool) -> Self {
+        if !user_error {
+            error!("{}", &e);
+        }
         Self { err: Box::new(e), user_error }
     }
 
