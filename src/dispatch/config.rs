@@ -12,8 +12,9 @@ use serenity::client::Context;
 use serenity::model::id::{GuildId, RoleId, ChannelId};
 use sled::IVec;
 
-use crate::db::DbContext;
+use crate::db::{DbContext, DbKey};
 use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
+use std::borrow::Cow;
 
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 
@@ -236,5 +237,17 @@ impl VerifiedChannel {
         self.to_channel_name(ctx, guild)
             .await
             .unwrap_or_else(|_| self.to_string())
+    }
+}
+
+impl DbKey for VerifiedChannel {
+    fn to_key(&self) -> Cow<[u8]> {
+        Cow::Owned(self.0.as_u64().to_be_bytes().to_vec())
+    }
+}
+
+impl DbKey for VerifiedRole {
+    fn to_key(&self) -> Cow<[u8]> {
+        self.0.to_be_bytes().to_vec().into()
     }
 }

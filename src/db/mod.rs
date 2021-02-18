@@ -103,7 +103,7 @@ impl DbContext {
     }
 
     pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: AsRef<[u8]> + Send + 'static,
+        where B: DbKey + Send + 'static,
               S: Serialize + DeserializeOwned + Send + 'static {
         self.do_async(move |s| {
             s.get_or_insert_sync(key, def)
@@ -111,9 +111,10 @@ impl DbContext {
     }
 
     pub fn get_or_insert_sync<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: AsRef<[u8]>,
+        where B: DbKey,
               S: Serialize + DeserializeOwned {
         let serialized = rmp_serde::to_vec(&def)?;
+        let key = key.to_key();
         let csr = self.tree.compare_and_swap(key, None as Option<&[u8]>, Some(serialized));
 
         match csr {
@@ -124,21 +125,29 @@ impl DbContext {
     }
 
     pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
-        where B: AsRef<[u8]> + Send + 'static,
+        where B: DbKey + Send + 'static,
               S: Serialize + DeserializeOwned {
         let serialized = rmp_serde::to_vec(&val)?;
         self.do_async(move |c| {
-            c.tree.insert(key, serialized).map(|_|())
+            c.tree.insert(key.to_key(), serialized).map(|_|())
         }).await?;
         Ok(())
     }
 
+    pub async fn contains_key<B>(&self, key: B) -> crate::error::Result<bool>
+        where B: DbKey + Send + 'static {
+        let exists = self.do_async(move |c| {
+            c.tree.contains_key(key.to_key())
+        }).await?;
+        Ok(exists)
+    }
+
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
-        where B: AsRef<[u8]> + Send + 'static,
+        where B: DbKey + Send + 'static,
               D: DeserializeOwned + Send + 'static {
         self.do_async(move |s| {
             let res: crate::error::Result<_> = try {
-                s.tree.get(key)?
+                s.tree.get(key.to_key())?
                     .map_or(Ok(None), |v| rmp_serde::from_read(v.as_ref()))?
             };
             res
@@ -175,5 +184,15 @@ impl NamespacedDbContext {
     /// Workaround for backwards compat.
     pub async fn config_ctx(guild: GuildId) -> crate::error::Result<Self> {
         Self::new(guild, "").await
+    }
+}
+
+pub trait DbKey {
+    fn to_key(&self) -> Cow<[u8]>;
+}
+
+impl<T: AsRef<[u8]>> DbKey for T {
+    fn to_key(&self) -> Cow<[u8]> {
+        self.as_ref().into()
     }
 }

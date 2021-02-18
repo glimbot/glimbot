@@ -66,12 +66,10 @@ impl Module for RoleModule {
                 let vrole = VerifiedRole::from_str_with_ctx(role, ctx, gid)
                     .await?;
 
-                let is_joinable = db.do_async(move |c| {
-                    c.tree().contains_key(vrole.into_be_bytes())
-                }).await?;
+                let is_joinable = db.contains_key(vrole).await?;
 
                 if !is_joinable {
-                    return Err(UserError::new(format!("{} is not user-joinable.", vrole.to_role_name_or_id(ctx, gid).await)).into());
+                    return Err(UserError::new(format!("{} is not user-addable/removable.", vrole.to_role_name_or_id(ctx, gid).await)).into());
                 }
 
                 let guild = gid.to_guild_cached(ctx)
