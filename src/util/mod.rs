@@ -21,3 +21,13 @@ pub trait ClapExt: StructOpt + Sized {
 }
 
 impl<T> ClapExt for T where T: StructOpt + Sized {}
+
+pub trait FlipResultExt<T, E>: Sized {
+    fn flip(self) -> Result<Option<T>, E>;
+}
+
+impl<T, E> FlipResultExt<T, E> for Option<Result<T, E>> {
+    fn flip(self) -> Result<Option<T>, E> {
+        self.map_or(Ok(None), |r| r.map(|v| Some(v)))
+    }
+}

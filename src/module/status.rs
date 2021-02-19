@@ -10,12 +10,13 @@ use systemstat::Platform;
 use serenity::builder::{CreateEmbed, CreateEmbedAuthor};
 use crate::about::REPO_URL;
 use serenity::utils::Color;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
     ModInfo {
         name: "bot-status",
         sensitivity: Sensitivity::Owner,
-        does_filtering: false,
+        does_filtering: true,
         command: true,
         config_values: Vec::new()
     }
@@ -23,7 +24,10 @@ static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
 
 pub const BYTES_IN_MIB: u64 = 1024 * 1024;
 
-pub struct StatusModule;
+#[derive(Default)]
+pub struct StatusModule {
+    command_counter: AtomicU64
+}
 
 pub static START_TIME: Lazy<Instant> = Lazy::new(|| Instant::now());
 pub const GLIM_COLOR: Color = Color::new(0xEDBBF3);
@@ -32,6 +36,12 @@ pub const GLIM_COLOR: Color = Color::new(0xEDBBF3);
 impl Module for StatusModule {
     fn info(&self) -> &ModInfo {
         &STATUS_INFO
+    }
+
+    async fn filter(&self, dis: &Dispatch, _ctx: &Context, _orig: &Message, name: String) -> crate::error::Result<String> {
+        let _ = dis.command_module(&name)?;
+        self.command_counter.fetch_add(1, Ordering::Relaxed);
+        Ok(name)
     }
 
     async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, _: Vec<String>) -> crate::error::Result<()> {
@@ -59,6 +69,8 @@ impl Module for StatusModule {
             .await
             .len();
 
+        let commands_seen = self.command_counter.load(Ordering::Relaxed);
+
         orig.channel_id.send_message(ctx, |e| {
             e.embed(|emb| {
                 emb
@@ -71,6 +83,7 @@ impl Module for StatusModule {
                     .field("Sys Uptime", pretty_sys_uptime, false)
                     .field("Shard Id", shard, true)
                     .field("Shard Count", total_shards, true)
+                    .field("Commands Seen", commands_seen, true)
             }).reference_message(orig)
         })
             .await

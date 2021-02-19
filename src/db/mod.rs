@@ -11,6 +11,7 @@ use serenity::futures::StreamExt;
 use std::borrow::Cow;
 use std::ops::Deref;
 use smallvec::SmallVec;
+use crate::util::FlipResultExt;
 
 pub fn default_data_folder() -> PathBuf {
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -132,6 +133,17 @@ impl DbContext {
             c.tree.insert(key.to_key(), serialized).map(|_|())
         }).await?;
         Ok(())
+    }
+
+    pub async fn remove<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
+        where B: DbKey + Send + 'static,
+              D: DeserializeOwned + Send + 'static {
+        self.do_async(move |s| {
+            let o = s.tree.remove(key.to_key())?;
+            s.tree.flush()?;
+            let r = o.map(|v| rmp_serde::from_read_ref(&v));
+            Ok(r.flip()?)
+        }).await
     }
 
     pub async fn contains_key<B>(&self, key: B) -> crate::error::Result<bool>
