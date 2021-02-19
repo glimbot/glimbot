@@ -24,6 +24,7 @@ use serenity::prelude::TypeMapKey;
 use serenity::client::bridge::gateway::ShardManager;
 use crate::dispatch::config::ValueType;
 use std::any::Any;
+use std::time::Instant;
 
 pub struct Dispatch {
     owner: UserId,
@@ -187,6 +188,7 @@ impl Dispatch {
 impl EventHandler for Dispatch {
     #[instrument(level = "info", skip(self, ctx, new_message), fields(g, u = % new_message.author.id, m = % new_message.id))]
     async fn message(&self, ctx: Context, new_message: Message) {
+        let start = Instant::now();
         let res = self.handle_message(&ctx, &new_message).await;
 
         res.log_error();
@@ -205,6 +207,9 @@ impl EventHandler for Dispatch {
                 error!("Failed while sending error message: {}", e);
             }
         }
+
+        let elapsed = start.elapsed();
+        debug!("Processing took {} ms", elapsed.as_millis());
     }
 
     async fn ready(&self, ctx: Context, rdy: Ready) {
