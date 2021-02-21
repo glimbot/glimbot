@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
 use std::io;
-use serenity::model::id::GuildId;
+use serenity::model::id::{GuildId, UserId, ChannelId, RoleId};
 use tokio::task;
 use byteorder::ByteOrder;
 use serde::{Serialize, Deserialize};
@@ -53,7 +53,7 @@ fn db() -> &'static sled::Db {
 #[derive(Clone)]
 pub struct DbContext {
     guild: GuildId,
-    tree: sled::Tree
+    tree: sled::Tree,
 }
 
 impl DbContext {
@@ -72,7 +72,7 @@ impl DbContext {
 
         Ok(Self {
             guild,
-            tree
+            tree,
         })
     }
 
@@ -89,7 +89,7 @@ impl DbContext {
 
         Ok(Self {
             guild,
-            tree
+            tree,
         })
     }
 
@@ -119,8 +119,11 @@ impl DbContext {
         let csr = self.tree.compare_and_swap(key, None as Option<&[u8]>, Some(serialized));
 
         match csr {
-            Ok(Ok(())) => {self.tree.flush()?; Ok(def)}, // this is the only case in which we actually changed something
-            Ok(Err(CompareAndSwapError{current, ..})) => Ok(rmp_serde::from_read(current.unwrap().as_ref())?),
+            Ok(Ok(())) => {
+                self.tree.flush()?;
+                Ok(def)
+            } // this is the only case in which we actually changed something
+            Ok(Err(CompareAndSwapError { current, .. })) => Ok(rmp_serde::from_read(current.unwrap().as_ref())?),
             Err(e) => Err(e.into())
         }
     }
@@ -130,7 +133,7 @@ impl DbContext {
               S: Serialize + DeserializeOwned {
         let serialized = rmp_serde::to_vec(&val)?;
         self.do_async(move |c| {
-            c.tree.insert(key.to_key(), serialized).map(|_|())
+            c.tree.insert(key.to_key(), serialized).map(|_| ())
         }).await?;
         Ok(())
     }
@@ -208,3 +211,17 @@ impl<T: AsRef<[u8]>> DbKey for T {
         self.as_ref().into()
     }
 }
+
+#[macro_export]
+macro_rules! impl_id_db_key {
+    ($($key:path),+) => {
+        $(
+            impl $crate::db::DbKey for $key {
+                fn to_key(&self) -> Cow<[u8]> {
+                    self.0.0.to_be_bytes().to_vec().into()
+                }
+            }
+        )+
+    };
+}
+

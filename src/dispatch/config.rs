@@ -9,12 +9,14 @@ use downcast_rs::impl_downcast;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serenity::client::Context;
-use serenity::model::id::{GuildId, RoleId, ChannelId};
+use serenity::model::id::{GuildId, RoleId, ChannelId, UserId};
 use sled::IVec;
 
 use crate::db::{DbContext, DbKey};
 use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
 use std::borrow::Cow;
+use serenity::model::misc::Mentionable;
+use serenity::model::guild::Member;
 
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 
@@ -240,9 +242,55 @@ impl VerifiedChannel {
     }
 }
 
-impl DbKey for VerifiedChannel {
-    fn to_key(&self) -> Cow<[u8]> {
-        Cow::Owned(self.0.as_u64().to_be_bytes().to_vec())
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct VerifiedUser(UserId);
+
+impl VerifiedUser {
+    pub fn into_inner(self) -> UserId {
+        self.0
+    }
+
+    pub async fn to_user_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
+        let uid = self.into_inner();
+        let g = guild.to_guild_cached(ctx).await
+            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+        let member = g.members.get(&uid)
+            .ok_or_else(|| UserError::new(format!("No such user in this guild: {}", &self)))?;
+        Ok(member.nick.clone().unwrap_or_else(|| member.user.name.clone()))
+    }
+
+    pub async fn to_user_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
+        self.to_user_name(ctx, guild)
+            .await
+            .unwrap_or_else(|_| self.to_string())
+    }
+}
+
+impl_err!(NoSuchUser, "No such user in guild, or two members have the same nickname.", true);
+
+#[async_trait::async_trait]
+impl FromStrWithCtx for VerifiedUser {
+    type Err = crate::error::Error;
+
+    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
+        let guild = gid.to_guild_cached(ctx)
+            .await
+            .ok_or(GuildNotInCache)?;
+        let uid: Member = if let Ok(id) = UserId::from_str(s) {
+            guild.member(ctx, id)
+                .await
+                .ok()
+        } else {
+            guild.member_named(s).cloned()
+        }.ok_or(NoSuchUser)?;
+
+        Ok(VerifiedUser(uid.user.id))
+    }
+}
+
+impl fmt::Display for VerifiedUser {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.mention())
     }
 }
 
@@ -250,4 +298,9 @@ impl DbKey for VerifiedRole {
     fn to_key(&self) -> Cow<[u8]> {
         self.0.to_be_bytes().to_vec().into()
     }
+}
+
+impl_id_db_key! {
+    VerifiedUser,
+    VerifiedChannel
 }

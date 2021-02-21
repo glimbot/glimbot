@@ -10,8 +10,9 @@ use serenity::model::id::{GuildId, RoleId};
 use crate::db::DbContext;
 use crate::dispatch::{config, Dispatch};
 use crate::dispatch::config::{FromStrWithCtx, VerifiedRole};
-use crate::error::{IntoBotErr, SysError, UserError};
+use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache, RoleNotInCache, InsufficientPermissions, DeputyConfused};
 use crate::module::{ModInfo, Module, Sensitivity};
+use serenity::model::guild::{Member, Role};
 
 pub struct PrivilegeFilter;
 
@@ -59,5 +60,32 @@ impl Module for PrivilegeFilter {
         } else {
             Err(UserError::new("You do not have permission to run that command.").into())
         }
+    }
+}
+
+/// Returns Ok(()) if this member has the permissions to take on this role, false otherwise.
+/// Necessary to avoid confused deputy issues.
+#[instrument(level = "debug", skip(ctx, mem, role), fields(r = % role.id))]
+pub async fn ensure_authorized_for_role(ctx: &Context, mem: &Member, role: &Role) -> crate::error::Result<()> {
+    let guild = mem.guild_id.to_guild_cached(ctx)
+        .await
+        .ok_or(GuildNotInCache)?;
+    debug!("Checking if owner.");
+    if guild.owner_id == mem.user.id {
+        debug!("Command run by guild owner.");
+        return Ok(());
+    }
+
+    debug!("Not owner; checking highest role.");
+    let (_max_role, pos) = mem.highest_role_info(ctx)
+        .await
+        .ok_or(RoleNotInCache)?;
+
+    if pos < role.position {
+        debug!("User role not high enough: {} < {}", pos, role.position);
+        Err(DeputyConfused.into())
+    } else {
+        debug!("User authorized.");
+        Ok(())
     }
 }

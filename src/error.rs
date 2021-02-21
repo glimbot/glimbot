@@ -189,3 +189,6 @@ macro_rules! impl_err {
 }
 
 impl_err!(GuildNotInCache, "Couldn't find guild in cache.", false);
+impl_err!(RoleNotInCache, "Couldn't find role in cache.", false);
+impl_err!(InsufficientPermissions, "You do not have the permissions to run this command.", true);
+impl_err!(DeputyConfused, "Your role is not high enough in the hierarchy to do that.", true);

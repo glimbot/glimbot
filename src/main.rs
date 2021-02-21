@@ -19,12 +19,13 @@
 #[macro_use]
 mod error;
 #[macro_use]
+mod db;
+#[macro_use]
 mod dispatch;
 mod about;
 mod run;
 mod module;
 mod util;
-mod db;
 
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use clap::{SubCommand, AppSettings, ArgMatches};

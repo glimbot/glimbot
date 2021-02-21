@@ -1,6 +1,6 @@
 use crate::module::{Module, ModInfo, Sensitivity};
 use serenity::model::prelude::RoleId;
-use crate::dispatch::config::{FromStrWithCtx, RoleExt};
+use crate::dispatch::config::{FromStrWithCtx, RoleExt, VerifiedUser, NoSuchUser, Value};
 use serenity::client::Context;
 use serenity::model::id::GuildId;
 use once_cell::sync::Lazy;
@@ -14,11 +14,12 @@ use serde::Serialize;
 use crate::dispatch::config::VerifiedRole;
 use itertools::Itertools;
 use futures::StreamExt;
-use crate::error::{UserError, SysError};
+use crate::error::{UserError, SysError, GuildNotInCache, RoleNotInCache, InsufficientPermissions};
 use serenity::utils::MessageBuilder;
 use sled::IVec;
 use std::str::FromStr;
 use std::fmt;
+use crate::module::privilege::{PRIV_NAME, ensure_authorized_for_role};
 
 pub struct RoleModule;
 
@@ -67,6 +68,15 @@ impl Module for RoleModule {
 
                 let vrole = VerifiedRole::from_str_with_ctx(role, ctx, gid)
                     .await?;
+
+                let full_role = vrole.into_inner().to_role_cached(ctx)
+                    .await
+                    .ok_or(RoleNotInCache)?;
+
+                let auth_mem = orig.member(ctx)
+                    .await?;
+
+                ensure_authorized_for_role(ctx, &auth_mem, &full_role).await?;
 
                 let is_joinable = db.contains_key(vrole).await?;
 
@@ -129,35 +139,45 @@ pub struct ModRoleModule;
 
 #[derive(Debug, StructOpt)]
 #[structopt(no_version)]
-enum Action {}
+enum UserAction {
+    /// Adds a role to a user
+    Assign,
+    /// Removes a role from a user
+    Unassign,
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(no_version)]
+/// What to do with a role.
+enum Action {
+    /// Makes a role joinable
+    AddJoinable,
+    /// Removes a role from the joinable list.
+    DelJoinable,
+    /// Assign or unassign a role to a user.
+    User {
+        /// The user to assign/unassign a role to.
+        user: String,
+        #[structopt(subcommand)]
+        /// Assign or unassign.
+        action: UserAction,
+    },
+}
 
 #[derive(StructOpt)]
 #[structopt(name = "mod-role", no_version)]
 /// Command to manage roles that users can join on their own.
-enum ModRoleOpt {
-    /// Make a role joinable.
-    AddJoinable {
-        role: String // The role to make joinable
-    },
-    /// Remove a role from the joinable list.
-    DelJoinable {
-        role: String // The role to remove from the list
-    },
+struct ModRoleOpt {
+    #[structopt(subcommand)]
+    /// What to do with a role.
+    action: Action,
+    /// The role on which an action will be performed.
+    role: String,
 }
 
 impl ModRoleOpt {
     pub fn extract_role(&self) -> &str {
-        match self {
-            ModRoleOpt::AddJoinable { role } => { role }
-            ModRoleOpt::DelJoinable { role } => { role }
-        }
-    }
-
-    pub fn is_add(&self) -> bool {
-        match self {
-            ModRoleOpt::AddJoinable { .. } => { true }
-            ModRoleOpt::DelJoinable { .. } => { false }
-        }
+        self.role.as_str()
     }
 }
 
@@ -172,23 +192,58 @@ impl Module for ModRoleModule {
         &INFO
     }
 
-    async fn process(&self, _dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
         let opts = ModRoleOpt::from_iter_with_help(command)?;
         let gid = orig.guild_id.unwrap();
         let role = VerifiedRole::from_str_with_ctx(opts.extract_role(), ctx, gid)
             .await?;
 
+        let full_role = role.into_inner().to_role_cached(ctx)
+            .await
+            .ok_or(RoleNotInCache)?;
+
+        let auth_mem = orig.member(ctx)
+            .await?;
+
+        ensure_authorized_for_role(ctx, &auth_mem, &full_role).await?;
+
         let db = NamespacedDbContext::new(gid, JOINABLE_ROLES_KEY)
             .await?;
 
-        let message = if opts.is_add() {
-            db.insert(role, 0u8).await?;
-            "Set role to joinable."
-        } else {
-            let prev_val: Option<u8> = db.remove(role).await?;
-            match prev_val {
-                None => { "Role was already not joinable." }
-                Some(_) => { "Role is no longer joinable." }
+        let message = match opts.action {
+            Action::AddJoinable => {
+                db.insert(role, ()).await?;
+                "Set role to joinable."
+            }
+            Action::DelJoinable => {
+                let prev_val: Option<()> = db.remove(role).await?;
+                match prev_val {
+                    None => { "Role was already not joinable." }
+                    Some(_) => { "Role is no longer joinable." }
+                }
+            }
+            Action::User { user, action } => {
+                let user = VerifiedUser::from_str_with_ctx(&user, ctx, gid)
+                    .await?;
+                let mut member = gid.to_guild_cached(ctx)
+                    .await
+                    .ok_or(GuildNotInCache)?
+                    .member(ctx, user.into_inner())
+                    .await
+                    .map_err(|_| NoSuchUser)?;
+
+                match action {
+                    UserAction::Assign => {
+                        member.add_role(ctx, role.into_inner())
+                            .await?;
+                        "Added role to user."
+                    }
+                    UserAction::Unassign => {
+                        member.remove_role(ctx, role.into_inner())
+                            .await?;
+                        "Removed role from user if they had it."
+                    }
+                }
             }
         };
 
