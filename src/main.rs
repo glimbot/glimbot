@@ -26,14 +26,15 @@ mod about;
 mod run;
 mod module;
 mod util;
+mod example;
 
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 use clap::{SubCommand, AppSettings, ArgMatches};
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(target_env = "gnu")]
 use jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(target_env = "gnu")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -55,7 +56,10 @@ async fn main() -> anyhow::Result<()> {
         .author(about::AUTHOR_NAME)
         .subcommand(
             SubCommand::with_name("run")
-                .help("Starts Glimbot.")
+                .about("Starts Glimbot.")
+        )
+        .subcommand(
+            example::subcommand()
         )
         .setting(AppSettings::SubcommandRequired)
         .get_matches()
@@ -65,6 +69,9 @@ async fn main() -> anyhow::Result<()> {
         ("run", _) => {
             info!("Starting Glimbot.");
             run::start_bot().await?;
+        },
+        ("make-config", Some(m)) => {
+            example::handle_matches(m).await?;
         }
         _ => unreachable!("Unrecognized command; we should have errored out already.")
     }
