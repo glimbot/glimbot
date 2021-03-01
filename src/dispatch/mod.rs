@@ -1,6 +1,6 @@
 pub mod config;
 
-use serenity::model::id::UserId;
+use serenity::model::id::{UserId, GuildId};
 use once_cell::sync::OnceCell;
 use tokio::sync::{RwLock, Mutex};
 use serenity::client::{Context, EventHandler};
@@ -215,5 +215,37 @@ impl EventHandler for Dispatch {
     async fn ready(&self, ctx: Context, rdy: Ready) {
         info!("up and running in {} guilds.", rdy.guilds.len());
         ctx.set_activity(Activity::playing("Cultist Simulator")).await;
+    }
+}
+
+
+#[derive(Shrinkwrap, Clone)]
+pub struct ArcDispatch(Arc<Dispatch>);
+
+impl From<Dispatch> for ArcDispatch {
+    fn from(d: Dispatch) -> Self {
+        ArcDispatch(Arc::new(d))
+    }
+}
+
+struct BackgroundService {
+    dispatch: ArcDispatch,
+    ctx: Context,
+}
+
+#[async_trait::async_trait]
+impl EventHandler for ArcDispatch {
+    #[instrument(level="info", skip(self, ctx, guilds), fields(shard=%ctx.shard_id))]
+    async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
+        info!("Starting background work service.");
+
+    }
+
+    async fn message(&self, ctx: Context, new_message: Message) {
+        self.0.message(ctx, new_message).await
+    }
+
+    async fn ready(&self, ctx: Context, rdy: Ready) {
+        self.0.ready(ctx, rdy).await
     }
 }

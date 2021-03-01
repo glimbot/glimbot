@@ -1,7 +1,7 @@
 use serenity::client::bridge::gateway::GatewayIntents;
 use crate::module::status::START_TIME;
 use once_cell::sync::Lazy;
-use crate::dispatch::ShardManKey;
+use crate::dispatch::{ShardManKey, ArcDispatch};
 use crate::db::ensure_db;
 
 // Starts Glimbot.
@@ -17,6 +17,8 @@ pub async fn start_bot() -> anyhow::Result<()> {
     dispatch.add_module(crate::module::moderation::ModerationModule);
     dispatch.add_module(crate::module::shutdown::Shutdown);
     dispatch.add_module(crate::module::roles::ModRoleModule);
+
+    let dispatch = ArcDispatch::from(dispatch);
 
     let mut client = serenity::Client::builder(std::env::var("GLIMBOT_TOKEN").expect("Didn't find a token."))
         .intents(GatewayIntents::privileged() | GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILD_BANS | GatewayIntents::GUILDS | GatewayIntents::DIRECT_MESSAGES)

@@ -15,6 +15,7 @@
 
 #[macro_use] extern crate tracing;
 #[macro_use] extern crate serde;
+#[macro_use] extern crate shrinkwraprs;
 
 #[macro_use]
 mod error;
