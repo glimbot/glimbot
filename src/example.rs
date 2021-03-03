@@ -16,7 +16,7 @@ pub fn subcommand() -> clap::App<'static, 'static> {
         .about("Create a config file with placeholders to fill for a working dotenv file.")
 }
 
-pub async fn handle_matches(args: &ArgMatches<'_>) -> anyhow::Result<()> {
+pub async fn handle_matches(args: &ArgMatches<'_>) -> crate::error::Result<()> {
     let of = args.value_of("output-file").unwrap();
     let example_contents: Cow<[u8]> = ExampleEnv::get("example.env").unwrap();
     tokio::fs::write(of, &example_contents).await?;

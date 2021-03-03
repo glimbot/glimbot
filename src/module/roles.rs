@@ -8,18 +8,19 @@ use serenity::model::channel::Message;
 use crate::dispatch::Dispatch;
 use structopt::StructOpt;
 use crate::util::ClapExt;
-use crate::db::{DbContext, NamespacedDbContext};
+use crate::db::{DbContext};
+use shrinkwraprs::Shrinkwrap;
 use std::collections::HashSet;
 use serde::Serialize;
 use crate::dispatch::config::VerifiedRole;
 use itertools::Itertools;
-use futures::StreamExt;
-use crate::error::{UserError, SysError, GuildNotInCache, RoleNotInCache, InsufficientPermissions};
+use futures::{StreamExt, Stream};
+use crate::error::{UserError, SysError, GuildNotInCache, RoleNotInCache, InsufficientPermissions, DatabaseError};
 use serenity::utils::MessageBuilder;
-use sled::IVec;
 use std::str::FromStr;
 use std::fmt;
 use crate::module::privilege::{PRIV_NAME, ensure_authorized_for_role};
+use std::borrow::Borrow;
 
 pub struct RoleModule;
 
@@ -41,6 +42,89 @@ pub enum RoleOpt {
     ListJoinable,
 }
 
+#[derive(Shrinkwrap)]
+pub struct JoinableRoles<'pool> {
+    ctx: DbContext<'pool>
+}
+
+impl_err!(TooManyRoles, "Can't add more roles to joinable; you have too many!", true);
+impl_err!(AlreadyJoinable, "", true);
+
+impl<'pool> JoinableRoles<'pool> {
+    pub fn new(ctx: impl Borrow<DbContext<'pool>>) -> Self {
+        JoinableRoles { ctx: ctx.borrow().clone() }
+    }
+
+    pub async fn add_joinable_role(&self, role: VerifiedRole) -> crate::error::Result<()> {
+        let res: Result<_, sqlx::Error> = sqlx::query!(
+            "INSERT INTO joinable_roles (guild, role) VALUES ($1, $2);",
+            self.ctx.guild_as_i64(),
+            role.to_i64()
+        )
+            .execute(self.ctx.conn())
+            .await;
+
+        if let Err(e) = res {
+            if e.is_check() {
+                Err(TooManyRoles.into())
+            } else if e.is_unique() {
+                Err(AlreadyJoinable.into())
+            } else {
+                Err(e.into())
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn del_joinable_role(&self, role: VerifiedRole) -> crate::error::Result<()> {
+        sqlx::query!(
+            "DELETE FROM joinable_roles WHERE guild = $1 AND role = $2;",
+            self.ctx.guild_as_i64(),
+            role.to_i64()
+        ).execute(self.ctx.conn())
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn is_joinable(&self, role: VerifiedRole) -> crate::error::Result<bool> {
+        #[derive(Debug)]
+        struct Row {
+            matching: Option<i64>
+        }
+
+        Ok(sqlx::query_as!(
+                    Row,
+                    "SELECT COUNT(*) AS matching FROM joinable_roles WHERE guild = $1 AND role = $2;",
+                    self.ctx.guild_as_i64(),
+                    role.to_i64()
+                ).fetch_one(self.ctx.conn())
+            .await?
+            .matching
+            .unwrap_or_default() > 0)
+    }
+
+    pub async fn joinable_roles(&self) -> crate::error::Result<Vec<RoleId>> {
+        #[derive(Debug)]
+        struct Row {
+            role: i64
+        }
+        let s: Vec<Row> = sqlx::query_as!(
+            Row,
+            "SELECT role FROM joinable_roles WHERE guild = $1 ORDER BY role ASC;",
+            self.ctx.guild_as_i64()
+        ).fetch_all(self.ctx.conn())
+            .await?;
+        let mut out = Vec::with_capacity(s.len());
+        out.extend(
+            s.into_iter()
+                .map(|r| RoleId::from(r.role as u64))
+        );
+        Ok(out)
+    }
+}
+
 #[async_trait::async_trait]
 impl Module for RoleModule {
     fn info(&self) -> &ModInfo {
@@ -54,8 +138,9 @@ impl Module for RoleModule {
     async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
         let role_opts = RoleOpt::from_iter_with_help(command)?;
         let gid = orig.guild_id.unwrap();
-        let db = NamespacedDbContext::new(gid, JOINABLE_ROLES_KEY)
-            .await?;
+
+        let db = DbContext::new(dis.pool(), gid);
+        let join = JoinableRoles::new(db);
 
         let message = match &role_opts {
             RoleOpt::Join { .. } |
@@ -78,7 +163,7 @@ impl Module for RoleModule {
 
                 ensure_authorized_for_role(ctx, &auth_mem, &full_role).await?;
 
-                let is_joinable = db.contains_key(vrole).await?;
+                let is_joinable = join.is_joinable(vrole).await?;
 
                 if !is_joinable {
                     return Err(UserError::new(format!("{} is not user-addable/removable.", vrole.to_role_name_or_id(ctx, gid).await)).into());
@@ -86,7 +171,7 @@ impl Module for RoleModule {
 
                 let guild = gid.to_guild_cached(ctx)
                     .await
-                    .ok_or_else(|| SysError::new("No such guild."))?;
+                    .ok_or(GuildNotInCache)?;
                 let mut mem = guild.member(ctx, orig.author.id)
                     .await?;
 
@@ -102,18 +187,8 @@ impl Module for RoleModule {
                 }
             }
             RoleOpt::ListJoinable => {
-                let roles: Result<Vec<RoleId>, crate::error::Error> = db.do_async(|c| {
-                    c.tree().iter()
-                        .keys()
-                        .map_ok(|v| {
-                            let mut bytes = [0u8; 8];
-                            bytes.copy_from_slice(v.as_ref());
-                            RoleId::from(u64::from_be_bytes(bytes))
-                        })
-                        .try_collect()
-                        .map_err(Into::into)
-                }).await;
-                let roles: Vec<_> = futures::stream::iter(roles?
+                let roles = join.joinable_roles().await?;
+                let roles: Vec<_> = futures::stream::iter(roles
                     .into_iter())
                     .then(|r| async move { r.to_role_name_or_id(ctx, gid).await })
                     .collect()
@@ -207,20 +282,17 @@ impl Module for ModRoleModule {
 
         ensure_authorized_for_role(ctx, &auth_mem, &full_role).await?;
 
-        let db = NamespacedDbContext::new(gid, JOINABLE_ROLES_KEY)
-            .await?;
+        let db = DbContext::new(dis.pool(), gid);
+        let join = JoinableRoles::new(db);
 
         let message = match opts.action {
             Action::AddJoinable => {
-                db.insert(role, ()).await?;
+                join.add_joinable_role(role).await?;
                 "Set role to joinable."
             }
             Action::DelJoinable => {
-                let prev_val: Option<()> = db.remove(role).await?;
-                match prev_val {
-                    None => { "Role was already not joinable." }
-                    Some(_) => { "Role is no longer joinable." }
-                }
+                join.del_joinable_role(role).await?;
+                "Role is/was no longer joinable."
             }
             Action::User { user, action } => {
                 let user = VerifiedUser::from_str_with_ctx(&user, ctx, gid)

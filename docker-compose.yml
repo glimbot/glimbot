@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=${GLIMBOT_DB_PASS}
+      - POSTGRES_USER=${GLIMBOT_DB_USER}
+    restart: always
+
+volumes:
+  db-data:
+    driver: local

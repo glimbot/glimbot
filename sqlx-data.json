@@ -1,0 +1,127 @@
+{
+  "db": "PostgreSQL",
+  "054b1bfb822cee862be30946b7aa04e67b39240d3beffd63ccf6552b60bc791e": {
+    "query": "\n            INSERT INTO config_values (guild, name, value)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (guild, name) DO UPDATE\n                SET value = EXCLUDED.value;\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Text",
+          "Jsonb"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "2d16b542737d2576d08c84d60ff93d3ea44f9162aa3cd94dd1638f4cee4ef92d": {
+    "query": "INSERT INTO joinable_roles (guild, role) VALUES ($1, $2);",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "3b4079af7469d269a6f46bfe90524e32ffab3ee31da76997c0f2e6dbf71ede2f": {
+    "query": "DELETE FROM joinable_roles WHERE guild = $1 AND role = $2;",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "4f7e8fb83bd3feb0cad3584912af6e93810f7c4c821c37e31adf807defe08b2f": {
+    "query": "SELECT role FROM joinable_roles WHERE guild = $1 ORDER BY role ASC;",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "role",
+          "type_info": "Int8"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "944df845c3416c503d6c08ea8aed3bf03791c0d0ebd910e740901b2fb61fc822": {
+    "query": "SELECT COUNT(*) AS matching FROM joinable_roles WHERE guild = $1 AND role = $2;",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "matching",
+          "type_info": "Int8"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8"
+        ]
+      },
+      "nullable": [
+        null
+      ]
+    }
+  },
+  "b623ff8c0ba7b8ad23fb65599ebc0b888c7d9bae0ec6a8d5e81cfb30ac3d6c75": {
+    "query": "\n            SELECT value FROM config_values WHERE guild = $1 AND name = $2;\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "value",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Text"
+        ]
+      },
+      "nullable": [
+        false
+      ]
+    }
+  },
+  "efa07a1adcb7f2711bef6d34826e453d4fe36bfc61526a012c06a55d350c063a": {
+    "query": "\n                SELECT res AS value FROM get_or_insert_config($1, $2, $3);\n                ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "value",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Text",
+          "Jsonb"
+        ]
+      },
+      "nullable": [
+        null
+      ]
+    }
+  }
+}
