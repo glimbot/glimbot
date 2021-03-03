@@ -51,7 +51,7 @@ itertools = "0.10"
 strip-ansi-escapes = "0.1.0"
 shrinkwraprs = "0.3"
 smallvec = "1.6"
-sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "json"]}
+sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "json", "offline"]}
 
 [dependencies.serenity]
 version = "0.10"
