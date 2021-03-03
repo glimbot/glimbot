@@ -9,7 +9,6 @@ use crate::util::ClapExt;
 use itertools::{Either, Itertools};
 use crate::db::DbContext;
 use std::sync::Arc;
-use sled::IVec;
 use serenity::utils::MessageBuilder;
 
 pub struct ConfigModule;
@@ -52,32 +51,21 @@ impl Module for ConfigModule {
 
     async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
         let opts = ConfigOpt::from_iter_with_help(command)?;
+        let gid = orig.guild_id.unwrap();
         let message = match opts {
             ConfigOpt::Set { key, value } => {
                 let config_val = dis.config_value(&key)?;
                 let new_val = config_val
                     .validate(ctx, orig.guild_id.unwrap(), &value)
                     .await?;
-                let ctx = DbContext::new(orig.guild_id.unwrap())
-                    .await?;
-                let akey = Arc::new(key);
-                let bkey = akey.clone();
-                ctx.do_async(move |c| {
-                    c.tree().insert(bkey.as_str(), new_val)?;
-                    c.tree().flush()?;
-                    Ok::<_, crate::error::Error>(())
-                }).await?;
-                format!("Set {} to specified value.", akey)
+                let ctx = DbContext::new(dis.pool(), gid);
+                ctx.insert(&key, new_val).await?;
+                format!("Set {} to specified value.", &key)
             }
             ConfigOpt::Show { key } => {
                 let config_val = dis.config_value(&key)?;
-                let db = DbContext::new(orig.guild_id.unwrap())
-                    .await?;
-                let akey = Arc::new(key);
-                let bkey = akey.clone();
-                let val = db.do_async(move |c| {
-                    c.tree().get(bkey.as_str())
-                }).await?;
+                let db = DbContext::new(dis.pool(), gid);
+                let val: Option<serde_json::Value> = db.get(key).await?;
 
                 match val {
                     None => { "<unset>".to_string() }

@@ -8,3 +8,4 @@ src/glimbot/schema.rs
 .env
 *.sqlite3*
 test/
+db.env

@@ -15,6 +15,7 @@
 
 #[macro_use] extern crate tracing;
 #[macro_use] extern crate serde;
+#[macro_use] extern crate sqlx;
 
 #[macro_use]
 mod error;
@@ -40,7 +41,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[doc(hidden)] // it's a main function
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> crate::error::Result<()> {
     better_panic::install();
     let _ = dotenv::dotenv()?;
     let sub = FmtSubscriber::builder()

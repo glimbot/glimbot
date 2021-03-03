@@ -6,12 +6,17 @@ use tokio::task;
 use byteorder::ByteOrder;
 use serde::{Serialize, Deserialize};
 use serde::de::DeserializeOwned;
-use sled::CompareAndSwapError;
 use serenity::futures::StreamExt;
 use std::borrow::Cow;
 use std::ops::Deref;
 use smallvec::SmallVec;
 use crate::util::FlipResultExt;
+use sqlx::pool::PoolConnection;
+use sqlx::{Postgres, PgPool, Acquire};
+use sqlx::types::Json;
+use sqlx::postgres::PgConnectOptions;
+use std::str::FromStr;
+use sqlx::migrate::Migrator;
 
 pub fn default_data_folder() -> PathBuf {
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -33,195 +38,122 @@ pub fn ensure_data_folder() -> io::Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn ensure_db() -> sled::Db {
-    let mut path = ensure_data_folder().expect("Failed to create data directory");
-    path.push("glimbot.sled");
-    let conf = sled::Config::default()
-        .path(path);
-    let db = conf.open().expect("Failed while opening db");
-    db
-}
+static MIGRATIONS: Migrator = sqlx::migrate!();
 
-fn db() -> &'static sled::Db {
-    static DB: Lazy<sled::Db> = Lazy::new(|| {
-        ensure_db()
-    });
+pub async fn create_pool() -> crate::error::Result<PgPool> {
+    let db_url = std::env::var("DATABASE_URL")?;
 
-    &DB
+    let pool = sqlx::PgPool::connect_with(
+        PgConnectOptions::from_str(&db_url)?
+            .application_name("glimbot")
+    ).await?;
+
+    info!("Running DB migrations if necessary.");
+    MIGRATIONS.run(&pool).await?;
+    Ok(pool)
 }
 
 #[derive(Clone)]
-pub struct DbContext {
+pub struct DbContext<'pool> {
     guild: GuildId,
-    tree: sled::Tree,
+    conn: &'pool PgPool,
 }
 
-impl DbContext {
-    pub fn tree(&self) -> &sled::Tree {
-        &self.tree
+impl DbContext<'_> {
+    pub fn guild(&self) -> GuildId {
+        self.guild
+    }
+
+    pub fn guild_as_i64(&self) -> i64 {
+        self.guild.0 as i64
     }
 }
 
-impl DbContext {
-    pub async fn new(guild: GuildId) -> crate::error::Result<Self> {
-        let bytes = guild.0.to_be_bytes();
-        let tree = task::spawn_blocking(move || {
-            let db = db();
-            db.open_tree(bytes)
-        }).await.unwrap()?;
+#[derive(Debug)]
+struct ConfigRow {
+    value: serde_json::Value
+}
 
-        Ok(Self {
+impl DbContext<'_> {
+    pub fn conn(&self) -> &PgPool {
+        &self.conn
+    }
+}
+
+impl<'pool> DbContext<'pool> {
+    pub fn new<'b: 'pool>(pool: &'b PgPool, guild: GuildId) -> Self {
+        Self {
             guild,
-            tree,
-        })
-    }
-
-    pub async fn with_namespace(guild: GuildId, namespace: &str) -> crate::error::Result<Self> {
-        let bytes = guild.0.to_be_bytes();
-        // Avoids allocation in a hotpath.
-        let mut name = SmallVec::<[_; 64]>::with_capacity(bytes.len() + namespace.as_bytes().len());
-        name.extend_from_slice(&bytes[..]);
-        name.extend_from_slice(namespace.as_bytes());
-        let tree = task::spawn_blocking(move || {
-            let db = db();
-            db.open_tree(name)
-        }).await.unwrap()?;
-
-        Ok(Self {
-            guild,
-            tree,
-        })
-    }
-
-    pub async fn do_async<F, R>(&self, f: F) -> R where F: (FnOnce(Self) -> R) + Send + 'static, R: Send + 'static {
-        let c = self.clone();
-        task::spawn_blocking(move || f(c)).await.unwrap()
-    }
-
-    pub async fn do_async_in_place<F, R>(&self, f: F) -> R where F: FnOnce(Self) -> R {
-        let c = self.clone();
-        task::block_in_place(move || f(c))
-    }
-
-    pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: DbKey + Send + 'static,
-              S: Serialize + DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            s.get_or_insert_sync(key, def)
-        }).await
-    }
-
-    pub fn get_or_insert_sync<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: DbKey,
-              S: Serialize + DeserializeOwned {
-        let serialized = rmp_serde::to_vec(&def)?;
-        let key = key.to_key();
-        let csr = self.tree.compare_and_swap(key, None as Option<&[u8]>, Some(serialized));
-
-        match csr {
-            Ok(Ok(())) => {
-                self.tree.flush()?;
-                Ok(def)
-            } // this is the only case in which we actually changed something
-            Ok(Err(CompareAndSwapError { current, .. })) => Ok(rmp_serde::from_read(current.unwrap().as_ref())?),
-            Err(e) => Err(e.into())
+            conn: pool,
         }
     }
 
-    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
-        where B: DbKey + Send + 'static,
+    pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
+        where B: ConfigKey,
               S: Serialize + DeserializeOwned {
-        let serialized = rmp_serde::to_vec(&val)?;
-        self.do_async(move |c| {
-            c.tree.insert(key.to_key(), serialized).map(|_| ())
-        }).await?;
+        let v = serde_json::to_value(def)?;
+        let key = key.to_key();
+
+        let out: Option<serde_json::Value> = sqlx::query_scalar!(
+            r#"
+                SELECT res AS value FROM get_or_insert_config($1, $2, $3);
+                "#,
+                self.guild_as_i64(),
+                key.as_ref(),
+                v
+        )
+            .fetch_one(self.conn())
+            .await?;
+        Ok(serde_json::from_value(out.expect("Failed to submit value to DB?"))?)
+    }
+
+    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
+        where B: ConfigKey,
+              S: Serialize {
+        let key = key.to_key();
+        let v = serde_json::to_value(val)?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO config_values (guild, name, value)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (guild, name) DO UPDATE
+                SET value = EXCLUDED.value;
+            "#,
+            self.guild_as_i64(),
+            key.as_ref(),
+            v
+        )
+            .execute(self.conn())
+            .await
+            .map(|_| ())?;
         Ok(())
     }
 
-    pub async fn remove<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
-        where B: DbKey + Send + 'static,
-              D: DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            let o = s.tree.remove(key.to_key())?;
-            s.tree.flush()?;
-            let r = o.map(|v| rmp_serde::from_read_ref(&v));
-            Ok(r.flip()?)
-        }).await
-    }
-
-    pub async fn contains_key<B>(&self, key: B) -> crate::error::Result<bool>
-        where B: DbKey + Send + 'static {
-        let exists = self.do_async(move |c| {
-            c.tree.contains_key(key.to_key())
-        }).await?;
-        Ok(exists)
-    }
-
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
-        where B: DbKey + Send + 'static,
-              D: DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            let res: crate::error::Result<_> = try {
-                s.tree.get(key.to_key())?
-                    .map_or(Ok(None), |v| rmp_serde::from_read(v.as_ref()))?
-            };
-            res
-        }).await
-    }
-}
-
-#[derive(Clone)]
-pub struct NamespacedDbContext {
-    namespace: Cow<'static, str>,
-    base: DbContext,
-}
-
-
-impl Deref for NamespacedDbContext {
-    type Target = DbContext;
-
-    fn deref(&self) -> &Self::Target {
-        &self.base
-    }
-}
-
-impl NamespacedDbContext {
-    pub async fn new<N>(guild: GuildId, namespace: N) -> crate::error::Result<Self> where N: Into<Cow<'static, str>> {
-        let namespace = namespace.into();
-        let base = DbContext::with_namespace(guild, &namespace)
+        where B: ConfigKey,
+              D: DeserializeOwned {
+        let key = key.to_key();
+        let o: Option<ConfigRow> = sqlx::query_as!(
+            ConfigRow,
+            r#"
+            SELECT value FROM config_values WHERE guild = $1 AND name = $2;
+            "#,
+            self.guild_as_i64(),
+            key.as_ref(),
+        )
+            .fetch_optional(self.conn())
             .await?;
-        Ok(Self {
-            namespace,
-            base,
-        })
-    }
-
-    /// Workaround for backwards compat.
-    pub async fn config_ctx(guild: GuildId) -> crate::error::Result<Self> {
-        Self::new(guild, "").await
+        Ok(o.map(|c| c.value).map(serde_json::from_value).flip()?)
     }
 }
 
-pub trait DbKey {
-    fn to_key(&self) -> Cow<[u8]>;
+pub trait ConfigKey {
+    fn to_key(&self) -> Cow<str>;
 }
 
-impl<T: AsRef<[u8]>> DbKey for T {
-    fn to_key(&self) -> Cow<[u8]> {
+impl<T: AsRef<str>> ConfigKey for T {
+    fn to_key(&self) -> Cow<str> {
         self.as_ref().into()
     }
 }
-
-#[macro_export]
-macro_rules! impl_id_db_key {
-    ($($key:path),+) => {
-        $(
-            impl $crate::db::DbKey for $key {
-                fn to_key(&self) -> Cow<[u8]> {
-                    self.0.0.to_be_bytes().to_vec().into()
-                }
-            }
-        )+
-    };
-}
-
