@@ -1,11 +1,11 @@
+#![allow(clippy::from_over_into)]
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Formatter;
-use std::convert::TryFrom;
-
-use crate::error;
-use crate::error::Error;
 use std::str::FromStr;
+
+use crate::error::Error;
 
 #[derive(Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct ConstrainedU64<const MIN: u64, const MAX: u64> {

@@ -1,6 +1,9 @@
-use structopt::StructOpt;
 use std::ffi::OsString;
+
+use structopt::StructOpt;
+
 use crate::error::{IntoBotErr, UserError};
+
 pub mod constraints;
 
 pub type HelpString = String;
@@ -28,6 +31,6 @@ pub trait FlipResultExt<T, E>: Sized {
 
 impl<T, E> FlipResultExt<T, E> for Option<Result<T, E>> {
     fn flip(self) -> Result<Option<T>, E> {
-        self.map_or(Ok(None), |r| r.map(|v| Some(v)))
+        self.map_or(Ok(None), |r| r.map(Some))
     }
 }

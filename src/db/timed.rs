@@ -1,16 +1,7 @@
-use serenity::model::id::{UserId, GuildId};
-use chrono::{Utc, DateTime, FixedOffset};
+use chrono::Utc;
 use chrono::Duration;
 use once_cell::sync::Lazy;
-use std::cmp::Ordering;
-use rand::{thread_rng, RngCore, Rng};
-use byteorder::{BigEndian, LittleEndian, NativeEndian};
-use zerocopy::{Unaligned, AsBytes, FromBytes, I64, U64, U128};
-use crate::db::{DbContext};
-use std::borrow::Cow;
-use serenity::client::Context;
-use std::fmt;
-use std::fmt::Formatter;
+use serenity::model::id::{GuildId, UserId};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -28,8 +19,8 @@ pub struct Action {
     kind: ActionKind
 }
 
-pub const ONE_MINUTE: Lazy<Duration> = Lazy::new(|| Duration::minutes(1));
-pub const ONE_HUNDREDISH_YEARS: Lazy<Duration> = Lazy::new(|| Duration::days(365 * 100));
+pub static ONE_MINUTE: Lazy<Duration> = Lazy::new(|| Duration::minutes(1));
+pub static ONE_HUNDREDISH_YEARS: Lazy<Duration> = Lazy::new(|| Duration::days(365 * 100));
 
 impl Action {
     pub fn new(user: UserId, guild: GuildId, action: ActionKind, expiry: impl Into<chrono::DateTime<Utc>>) -> Self {

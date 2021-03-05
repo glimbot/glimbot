@@ -13,11 +13,16 @@
 #![feature(option_insert)]
 #![forbid(unsafe_code)]
 #![deny(unused_must_use)]
+#![allow(dead_code)]
 
-#[macro_use] extern crate tracing;
 #[macro_use] extern crate serde;
-#[macro_use] extern crate sqlx;
 #[macro_use] extern crate shrinkwraprs;
+#[macro_use] extern crate tracing;
+
+use clap::{AppSettings, SubCommand};
+#[cfg(target_env = "gnu")]
+use jemallocator::Jemalloc;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[macro_use]
 mod error;
@@ -30,12 +35,6 @@ mod run;
 mod module;
 mod util;
 mod example;
-
-use tracing_subscriber::{FmtSubscriber, EnvFilter};
-use clap::{SubCommand, AppSettings, ArgMatches};
-
-#[cfg(target_env = "gnu")]
-use jemallocator::Jemalloc;
 
 #[cfg(target_env = "gnu")]
 #[global_allocator]

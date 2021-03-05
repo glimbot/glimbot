@@ -1,9 +1,10 @@
-use crate::module::{Module, ModInfo, Sensitivity};
+use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
-use crate::dispatch::{Dispatch, config};
-use once_cell::sync::Lazy;
+
+use crate::dispatch::{config, Dispatch};
 use crate::error::UserError;
+use crate::module::{ModInfo, Module, Sensitivity};
 
 pub struct BaseFilter;
 

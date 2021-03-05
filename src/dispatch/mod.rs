@@ -1,31 +1,30 @@
-pub mod config;
-
-use serenity::model::id::{UserId, GuildId};
-use once_cell::sync::OnceCell;
-use tokio::sync::{RwLock, Mutex};
-use serenity::client::{Context, EventHandler};
-use serenity::model::gateway::{Ready, Activity};
-use serenity::model::channel::Message;
-use std::sync::Arc;
-use crate::module::Module;
-use linked_hash_map::LinkedHashMap;
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Formatter;
-use std::borrow::Cow;
-use crate::db::DbContext;
-use crate::error::{LogErrorExt, UserError, SysError};
-use serenity::utils::MessageBuilder;
-use tracing::Instrument;
-use futures::TryStreamExt;
+use std::sync::Arc;
+use std::time::Instant;
+
 use futures::stream;
 use futures::stream::StreamExt;
-use std::collections::HashMap;
-use serenity::prelude::TypeMapKey;
+use futures::TryStreamExt;
+use linked_hash_map::LinkedHashMap;
+use serenity::client::{Context, EventHandler};
 use serenity::client::bridge::gateway::ShardManager;
-use crate::dispatch::config::ValueType;
-use std::any::Any;
-use std::time::Instant;
+use serenity::model::channel::Message;
+use serenity::model::gateway::{Activity, Ready};
+use serenity::model::id::{GuildId, UserId};
+use serenity::prelude::TypeMapKey;
+use serenity::utils::MessageBuilder;
 use sqlx::PgPool;
+use tokio::sync::Mutex;
+use tracing::Instrument;
+
+use crate::db::DbContext;
+use crate::dispatch::config::ValueType;
+use crate::error::{LogErrorExt, SysError, UserError};
+use crate::module::Module;
+
+pub mod config;
 
 pub struct Dispatch {
     owner: UserId,

@@ -1,16 +1,15 @@
-use once_cell::sync::Lazy;
-use crate::module::{ModInfo, Sensitivity, Module};
-use std::collections::HashSet;
-use std::iter::FromIterator;
-use serenity::client::Context;
-use crate::dispatch::{Dispatch, ShardManKey};
-use serenity::model::channel::Message;
-use std::time::{Instant, Duration};
-use systemstat::Platform;
-use serenity::builder::{CreateEmbed, CreateEmbedAuthor};
-use crate::about::REPO_URL;
-use serenity::utils::Color;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use once_cell::sync::Lazy;
+use serenity::client::Context;
+use serenity::model::channel::Message;
+use serenity::utils::Color;
+use systemstat::Platform;
+
+use crate::about::REPO_URL;
+use crate::dispatch::{Dispatch, ShardManKey};
+use crate::module::{ModInfo, Module, Sensitivity};
 
 static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
     ModInfo {
@@ -29,7 +28,7 @@ pub struct StatusModule {
     command_counter: AtomicU64
 }
 
-pub static START_TIME: Lazy<Instant> = Lazy::new(|| Instant::now());
+pub static START_TIME: Lazy<Instant> = Lazy::new(Instant::now);
 pub const GLIM_COLOR: Color = Color::new(0xEDBBF3);
 
 #[async_trait::async_trait]

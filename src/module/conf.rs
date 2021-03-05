@@ -1,15 +1,14 @@
-use crate::module::{Module, ModInfo, Sensitivity};
+use itertools::Itertools;
+use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
-use crate::dispatch::Dispatch;
+use serenity::utils::{content_safe, ContentSafeOptions, MessageBuilder};
 use structopt::StructOpt;
-use once_cell::sync::Lazy;
-use crate::error::IntoBotErr;
-use crate::util::ClapExt;
-use itertools::{Either, Itertools};
+
 use crate::db::DbContext;
-use std::sync::Arc;
-use serenity::utils::{MessageBuilder, content_safe, ContentSafeOptions};
+use crate::dispatch::Dispatch;
+use crate::module::{ModInfo, Module, Sensitivity};
+use crate::util::ClapExt;
 
 pub struct ConfigModule;
 

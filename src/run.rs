@@ -1,7 +1,7 @@
 use serenity::client::bridge::gateway::GatewayIntents;
+
+use crate::dispatch::{ArcDispatch, ShardManKey};
 use crate::module::status::START_TIME;
-use once_cell::sync::Lazy;
-use crate::dispatch::{ShardManKey, ArcDispatch};
 
 // Starts Glimbot.
 pub async fn start_bot() -> crate::error::Result<()> {

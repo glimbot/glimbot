@@ -1,30 +1,26 @@
-use crate::module::{Module, ModInfo, Sensitivity};
-use serenity::model::prelude::RoleId;
-use crate::dispatch::config::{FromStrWithCtx, RoleExt, VerifiedUser, NoSuchUser, Value};
-use serenity::client::Context;
-use serenity::model::id::GuildId;
-use once_cell::sync::Lazy;
-use serenity::model::channel::Message;
-use crate::dispatch::Dispatch;
-use structopt::StructOpt;
-use crate::util::ClapExt;
-use crate::db::{DbContext};
-use shrinkwraprs::Shrinkwrap;
-use std::collections::HashSet;
-use serde::Serialize;
-use crate::dispatch::config::VerifiedRole;
-use itertools::Itertools;
-use futures::{StreamExt, Stream};
-use crate::error::{UserError, SysError, GuildNotInCache, RoleNotInCache, InsufficientPermissions, DatabaseError};
-use serenity::utils::MessageBuilder;
-use std::str::FromStr;
-use std::fmt;
-use crate::module::privilege::{PRIV_NAME, ensure_authorized_for_role};
 use std::borrow::Borrow;
+
+use futures::StreamExt;
+use once_cell::sync::Lazy;
+use serenity::client::Context;
+use serenity::model::channel::Message;
+use serenity::model::prelude::RoleId;
+use serenity::utils::MessageBuilder;
+use shrinkwraprs::Shrinkwrap;
+use structopt::StructOpt;
+
+use crate::db::DbContext;
+use crate::dispatch::config::{FromStrWithCtx, NoSuchUser, RoleExt, VerifiedUser};
+use crate::dispatch::config::VerifiedRole;
+use crate::dispatch::Dispatch;
+use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache, UserError};
+use crate::module::{ModInfo, Module, Sensitivity};
+use crate::module::privilege::ensure_authorized_for_role;
+use crate::util::ClapExt;
 
 pub struct RoleModule;
 
-pub const JOINABLE_ROLES_KEY: &'static str = "joinable_roles";
+pub const JOINABLE_ROLES_KEY: &str = "joinable_roles";
 
 /// Command to join joinable roles. Use list-joinable to join a role.
 #[derive(StructOpt)]

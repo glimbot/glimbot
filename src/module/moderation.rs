@@ -1,29 +1,26 @@
-use crate::module::{Module, ModInfo, Sensitivity, UnimplementedModule};
+use std::borrow::{Borrow, Cow};
+use std::time::Duration;
+
+use once_cell::sync::Lazy;
+use serenity::builder::CreateEmbed;
 use serenity::client::Context;
 use serenity::model::channel::Message;
-use crate::dispatch::Dispatch;
-use crate::dispatch::config::{Value, VerifiedChannel, VerifiedRole};
-use once_cell::sync::Lazy;
-use structopt::StructOpt;
-use crate::util::constraints::{ConstrainedU64, AtMostU64};
-use std::time::Duration;
-use serenity::model::id::{UserId, GuildId, MessageId, ChannelId};
-use chrono::Utc;
 use serenity::model::guild::Member;
-use crate::db::{DbContext};
-use std::borrow::{Cow, Borrow};
-use serenity::utils::{MessageBuilder, Color};
-use serenity::builder::{CreateEmbed, CreateMessage};
-use serenity::model::guild::Target::User;
+use serenity::model::id::{ChannelId, GuildId, MessageId, UserId};
 use serenity::model::misc::Mentionable;
-use std::fmt;
-use std::fmt::Formatter;
-use crate::error::Error;
+use serenity::utils::Color;
+use structopt::StructOpt;
+
+use crate::db::DbContext;
+use crate::dispatch::config::{Value, VerifiedChannel, VerifiedRole};
+use crate::dispatch::Dispatch;
+use crate::module::{ModInfo, Module, Sensitivity};
 use crate::util::ClapExt;
+use crate::util::constraints::AtMostU64;
 
 pub struct ModerationModule;
 
-pub const TIMED_ACTION_KEY: &'static str = "timed";
+pub const TIMED_ACTION_KEY: &str = "timed";
 
 #[derive(Debug, StructOpt)]
 enum Action {
@@ -72,9 +69,9 @@ pub struct ModOpt {
     action: Action,
 }
 
-const MOD_CHANNEL: &'static str = "mod_log_channel";
+const MOD_CHANNEL: &str = "mod_log_channel";
 
-const MUTE_ROLE: &'static str = "mute_role";
+const MUTE_ROLE: &str = "mute_role";
 
 #[async_trait::async_trait]
 impl Module for ModerationModule {
@@ -213,7 +210,7 @@ impl ModAction {
     pub fn create_embed(&self, embed: &mut CreateEmbed) {
         let user = format!("{} ({})", self.user.display_name(), self.user.user.id);
         let moderator = self.moderator.mention();
-        let reason = self.reason.clone().unwrap_or("No reason specified.".into());
+        let reason = self.reason.clone().unwrap_or_else(|| "No reason specified.".into());
 
         embed.color(self.action.color())
             .title(self.action.title_name())
@@ -224,10 +221,10 @@ impl ModAction {
 
         if self.action.has_duration() {
             let dur = self.duration.as_ref()
-                .map(|d| humantime::format_duration(d.clone())
+                .map(|d| humantime::format_duration(*d)
                 .to_string()
                     .into())
-                .unwrap_or(Cow::from("indefinite"));
+                .unwrap_or_else(|| Cow::from("indefinite"));
 
             embed.field("Duration", dur, false);
         }

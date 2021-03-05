@@ -2,20 +2,18 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use downcast_rs::DowncastSync;
 use downcast_rs::impl_downcast;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serenity::client::Context;
-use serenity::model::id::{GuildId, RoleId, ChannelId, UserId};
-
-use crate::db::{DbContext, ConfigKey};
-use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
-use std::borrow::Cow;
-use serenity::model::misc::Mentionable;
 use serenity::model::guild::Member;
+use serenity::model::id::{ChannelId, GuildId, RoleId, UserId};
+use serenity::model::misc::Mentionable;
+
+use crate::db::DbContext;
+use crate::error::{GuildNotInCache, IntoBotErr, SysError, UserError};
 
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 

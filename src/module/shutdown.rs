@@ -1,8 +1,9 @@
-use crate::module::{Module, ModInfo, Sensitivity};
+use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
+
 use crate::dispatch::{Dispatch, ShardManKey};
-use once_cell::sync::Lazy;
+use crate::module::{ModInfo, Module, Sensitivity};
 
 pub struct Shutdown;
 
