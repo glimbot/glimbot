@@ -70,6 +70,7 @@ impl Module for StatusModule {
             .len();
 
         let commands_seen = self.command_counter.load(Ordering::Relaxed);
+        let stats = crate::db::CONFIG_CACHE.statistics();
 
         orig.channel_id.send_message(ctx, |e| {
             e.embed(|emb| {
@@ -79,6 +80,7 @@ impl Module for StatusModule {
                     .url(REPO_URL)
                     .field("CPU Load", format!("{:5.2} {:5.2} {:5.2}", load.one, load.five, load.fifteen), true)
                     .field("Memory Usage", format!("{:5} / {:5} MiB", used_mem_mib, total_mem_mib), true)
+                    .field("Cache Statistics (misses/accesses)", format!("{} / {}", stats.misses, stats.accesses), true)
                     .field("Uptime", pretty_elapsed, false)
                     .field("Sys Uptime", pretty_sys_uptime, false)
                     .field("Shard Id", shard, true)

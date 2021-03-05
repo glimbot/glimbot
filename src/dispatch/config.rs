@@ -10,9 +10,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serenity::client::Context;
 use serenity::model::id::{GuildId, RoleId, ChannelId, UserId};
-use sled::IVec;
 
-use crate::db::{DbContext, DbKey};
+use crate::db::{DbContext, ConfigKey};
 use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
 use std::borrow::Cow;
 use serenity::model::misc::Mentionable;
@@ -41,11 +40,11 @@ impl<T> Value<T> where T: ValueType {
         out
     }
 
-    pub async fn get_or_insert(&self, ctx: &DbContext, value: T) -> crate::error::Result<T> {
+    pub async fn get_or_insert(&self, ctx: &DbContext<'_>, value: T) -> crate::error::Result<T> {
         ctx.get_or_insert(self.name, value).await
     }
 
-    pub async fn get_or_default(&self, ctx: &DbContext) -> crate::error::Result<T> where T: Clone {
+    pub async fn get_or_default(&self, ctx: &DbContext<'_>) -> crate::error::Result<T> where T: Clone {
         if self.default.is_none() {
             return Err(UserError::new(format!("No default specified for {}", self.name)).into());
         }
@@ -53,11 +52,11 @@ impl<T> Value<T> where T: ValueType {
         ctx.get_or_insert(self.name, self.default.clone().unwrap()).await
     }
 
-    pub async fn get(&self, ctx: &DbContext) -> crate::error::Result<Option<T>> {
+    pub async fn get(&self, ctx: &DbContext<'_>) -> crate::error::Result<Option<T>> {
         ctx.get(self.name).await
     }
 
-    pub async fn set(&self, ctx: &DbContext, value: T) -> crate::error::Result<()> {
+    pub async fn set(&self, ctx: &DbContext<'_>, value: T) -> crate::error::Result<()> {
         ctx.insert(self.name, value).await
     }
 }
@@ -97,8 +96,8 @@ macro_rules! impl_not_user_settable {
 pub trait Validator: Send + Sync + Any + DowncastSync + 'static {
     fn name(&self) -> &'static str;
     fn help(&self) -> &'static str;
-    async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<IVec>;
-    fn display_value(&self, v: IVec) -> crate::error::Result<String>;
+    async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<serde_json::Value>;
+    fn display_value(&self, v: serde_json::Value) -> crate::error::Result<String>;
 }
 impl_downcast!(sync Validator);
 
@@ -112,14 +111,13 @@ impl<T> Validator for Value<T> where T: ValueType {
         self.help
     }
 
-    async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<IVec> {
+    async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<serde_json::Value> {
         let s: T = T::from_str_with_ctx(s, ctx, gid).await.into_user_err()?;
-        let out = rmp_serde::to_vec(&s)?;
-        Ok(out.into())
+        Ok(serde_json::to_value(s)?)
     }
 
-    fn display_value(&self, v: IVec) -> crate::error::Result<String> {
-        let v: T = rmp_serde::from_read(v.as_ref())?;
+    fn display_value(&self, v: serde_json::Value) -> crate::error::Result<String> {
+        let v: T = serde_json::from_value(v)?;
         Ok(v.to_string())
     }
 }
@@ -130,6 +128,9 @@ pub struct VerifiedRole(u64);
 impl VerifiedRole {
     pub fn into_inner(self) -> RoleId {
         self.0.into()
+    }
+    pub fn to_i64(&self) -> i64 {
+        self.0 as i64
     }
 
     pub fn into_be_bytes(self) -> [u8; 8] {
@@ -292,15 +293,4 @@ impl fmt::Display for VerifiedUser {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0.mention())
     }
-}
-
-impl DbKey for VerifiedRole {
-    fn to_key(&self) -> Cow<[u8]> {
-        self.0.to_be_bytes().to_vec().into()
-    }
-}
-
-impl_id_db_key! {
-    VerifiedUser,
-    VerifiedChannel
 }

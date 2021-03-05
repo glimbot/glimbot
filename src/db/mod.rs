@@ -5,16 +5,28 @@ use std::path::{Path, PathBuf};
 use std::io;
 use serenity::model::id::{GuildId, UserId, ChannelId, RoleId};
 use tokio::task;
-use serde::{Serialize};
+use byteorder::ByteOrder;
+use serde::{Serialize, Deserialize};
 use serde::de::DeserializeOwned;
-use sled::CompareAndSwapError;
 use serenity::futures::StreamExt;
 use std::borrow::Cow;
 use std::ops::Deref;
 use smallvec::SmallVec;
 use crate::util::FlipResultExt;
-use sled::transaction::ConflictableTransactionError::Abort;
-use sled::transaction::TransactionError;
+use sqlx::pool::PoolConnection;
+use sqlx::{Postgres, PgPool, Acquire};
+use sqlx::types::Json;
+use sqlx::postgres::PgConnectOptions;
+use std::str::FromStr;
+use sqlx::migrate::Migrator;
+use tokio::sync::{Mutex, RwLock};
+use std::hash::Hash;
+use std::collections::HashMap;
+use std::sync::Arc;
+use serde_json::Value;
+use futures::TryFuture;
+use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub fn default_data_folder() -> PathBuf {
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -36,239 +48,276 @@ pub fn ensure_data_folder() -> io::Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn ensure_db() -> sled::Db {
-    let mut path = ensure_data_folder().expect("Failed to create data directory");
-    path.push("glimbot.sled");
-    let conf = sled::Config::default()
-        .path(path);
-    let db = conf.open().expect("Failed while opening db");
-    db
-}
+static MIGRATIONS: Migrator = sqlx::migrate!();
 
-fn db() -> &'static sled::Db {
-    static DB: Lazy<sled::Db> = Lazy::new(|| {
-        ensure_db()
-    });
+pub async fn create_pool() -> crate::error::Result<PgPool> {
+    let db_url = std::env::var("DATABASE_URL")?;
 
-    &DB
+    let pool = sqlx::PgPool::connect_with(
+        PgConnectOptions::from_str(&db_url)?
+            .application_name("glimbot")
+    ).await?;
+
+    info!("Running DB migrations if necessary.");
+    MIGRATIONS.run(&pool).await?;
+    Ok(pool)
 }
 
 #[derive(Clone)]
-pub struct DbContext {
+pub struct DbContext<'pool> {
     guild: GuildId,
-    tree: sled::Tree,
+    conn: &'pool PgPool,
 }
 
-impl DbContext {
-    pub fn tree(&self) -> &sled::Tree {
-        &self.tree
+impl DbContext<'_> {
+    pub fn guild(&self) -> GuildId {
+        self.guild
+    }
+
+    pub fn guild_as_i64(&self) -> i64 {
+        self.guild.0 as i64
     }
 }
 
-impl DbContext {
-    pub async fn new(guild: GuildId) -> crate::error::Result<Self> {
-        let bytes = guild.0.to_be_bytes();
-        let tree = task::spawn_blocking(move || {
-            let db = db();
-            db.open_tree(bytes)
-        }).await.unwrap()?;
+#[derive(Debug)]
+struct ConfigRow {
+    value: serde_json::Value
+}
 
-        Ok(Self {
-            guild,
-            tree,
-        })
+pub type Arctex<T> = Arc<RwLock<T>>;
+pub type ArctexMap<K, V> = Arctex<HashMap<K, V>>;
+pub type CacheValue = Arctex<Option<serde_json::Value>>;
+
+#[derive(Default)]
+pub struct ConfigCache {
+    cache: RwLock<HashMap<GuildId, ArctexMap<String, CacheValue>>>,
+    cache_misses: AtomicU64,
+    cache_accesses: AtomicU64,
+}
+
+pub static CONFIG_CACHE: Lazy<ConfigCache> = Lazy::new(|| Default::default());
+
+pub struct CacheStats {
+    pub accesses: u64,
+    pub misses: u64
+}
+
+impl ConfigCache {
+    pub async fn ensure_guild_cache(&self, gid: GuildId) -> ArctexMap<String, CacheValue> {
+        let o = self.cache.read().await.get(&gid).cloned();
+
+        if let Some(m) = o {
+            return m;
+        }
+
+        let mut wg = self.cache.write().await;
+        let e = wg.entry(gid);
+        e.or_default().clone()
     }
 
-    pub async fn with_namespace(guild: GuildId, namespace: &str) -> crate::error::Result<Self> {
-        let bytes = guild.0.to_be_bytes();
-        // Avoids allocation in a hotpath.
-        let mut name = SmallVec::<[_; 64]>::with_capacity(bytes.len() + namespace.as_bytes().len());
-        name.extend_from_slice(&bytes[..]);
-        name.extend_from_slice(namespace.as_bytes());
-        let tree = task::spawn_blocking(move || {
-            let db = db();
-            db.open_tree(name)
-        }).await.unwrap()?;
+    pub async fn entry(&self, gid: GuildId, key: impl ConfigKey) -> CacheValue {
+        let k = key.to_key().into_owned();
+        let guild_cache = self.ensure_guild_cache(gid).await;
+        let potential = guild_cache.read().await.get(&k).cloned();
 
-        Ok(Self {
-            guild,
-            tree,
-        })
-    }
-
-    pub async fn do_async<F, R>(&self, f: F) -> R where F: (FnOnce(Self) -> R) + Send + 'static, R: Send + 'static {
-        let c = self.clone();
-        task::spawn_blocking(move || f(c)).await.unwrap()
-    }
-
-    pub async fn do_async_in_place<F, R>(&self, f: F) -> R where F: FnOnce(Self) -> R {
-        let c = self.clone();
-        task::block_in_place(move || f(c))
-    }
-
-    pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: DbKey + Send + 'static,
-              S: Serialize + DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            s.get_or_insert_sync(key, def)
-        }).await
-    }
-
-    pub async fn apply<B, S, F>(&self, key: B, f: F) -> crate::error::Result<Option<S>>
-        where B: DbKey + Send + 'static,
-              S: Serialize + DeserializeOwned + Send + 'static,
-              F: Fn(Option<&S>) -> Option<S> + Send + 'static {
-        self.do_async(move |c| {
-            let key = key.to_key();
-            let res = c.tree().transaction(move |t| {
-                let v = t.get(key.as_ref())?;
-                let value = v.map(|r| rmp_serde::from_read_ref(&r))
-                    .flip()
-                    .map_err(crate::error::Error::from)
-                    .map_err(Abort)?;
-                let new_v = f(value.as_ref());
-
-                match new_v {
-                    None => {
-                        t.remove(key.as_ref())?;
-                    }
-                    Some(v) => {
-                        let ser = rmp_serde::to_vec(&v)
-                            .map_err(crate::error::Error::from)
-                            .map_err(Abort)?;
-                        t.insert(key.as_ref(), ser)?;
-                    }
-                }
-                t.flush();
-                Ok(value)
-            });
-
-            res.map_err(|e| {
-                match e {
-                    TransactionError::Abort(e) => e,
-                    TransactionError::Storage(e) => e.into()
-                }
-            })
-        }).await
-    }
-
-    pub fn get_or_insert_sync<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
-        where B: DbKey,
-              S: Serialize + DeserializeOwned {
-        let serialized = rmp_serde::to_vec(&def)?;
-        let key = key.to_key();
-        let csr = self.tree.compare_and_swap(key, None as Option<&[u8]>, Some(serialized));
-
-        match csr {
-            Ok(Ok(())) => {
-                // this is the only case in which we actually changed something
-                self.tree.flush()?;
-                Ok(def)
+        let cv = match potential {
+            None => {
+                let mut wg = guild_cache.write().await;
+                wg.entry(k).or_default().clone()
             }
-            Ok(Err(CompareAndSwapError { current, .. })) => Ok(rmp_serde::from_read(current.unwrap().as_ref())?),
-            Err(e) => Err(e.into())
+            Some(v) => { v }
+        };
+
+        cv
+    }
+
+    pub fn statistics(&self) -> CacheStats {
+        CacheStats {
+            accesses: self.cache_accesses.load(Ordering::Relaxed),
+            misses: self.cache_misses.load(Ordering::Relaxed)
         }
     }
 
-    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
-        where B: DbKey + Send + 'static,
-              S: Serialize {
-        let serialized = rmp_serde::to_vec(&val)?;
-        self.do_async(move |c| {
-            c.tree.insert(key.to_key(), serialized).map(|_| ())
-        }).await?;
+    fn inc_access(&self) {
+        self.cache_accesses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn inc_miss(&self) {
+        self.cache_misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub async fn get_or_insert_with<K, F, R>(&self, gid: GuildId, key: K, f: F)
+                                             -> crate::error::Result<serde_json::Value>
+        where K: ConfigKey,
+              F: FnOnce() -> R,
+              R: Future<Output=crate::error::Result<serde_json::Value>> {
+        self.inc_access();
+        let entry = self.entry(gid, key).await;
+        let cur = entry.read().await.clone();
+        if let Some(v) = cur {
+            trace!("hit cache");
+            return Ok(v);
+        }
+
+        self.inc_miss();
+        let mut wg = entry.write().await;
+        if let Some(v) = wg.as_ref() {
+            trace!("hit cache; someone beat us to the punch");
+            return Ok(v.clone());
+        }
+
+        trace!("cache miss");
+        Ok(wg.get_or_insert(f().await?).clone())
+    }
+
+    pub async fn insert_with<K, Fut>(&self, gid: GuildId, key: K, f: Fut)
+                                     -> crate::error::Result<()>
+        where K: ConfigKey,
+              Fut: Future<Output=crate::error::Result<serde_json::Value>> {
+        self.inc_miss();
+        self.inc_access();
+        let entry = self.entry(gid, key).await;
+        let mut wg = entry.write().await;
+        trace!("updating cache");
+        wg.insert(f.await?);
         Ok(())
     }
 
-    pub async fn remove<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
-        where B: DbKey + Send + 'static,
-              D: DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            let o = s.tree.remove(key.to_key())?;
-            s.tree.flush()?;
-            let r = o.map(|v| rmp_serde::from_read_ref(&v));
-            Ok(r.flip()?)
-        }).await
+    pub async fn get<K, Fut>(&self, gid: GuildId, key: K, f: Fut) -> crate::error::Result<Option<serde_json::Value>>
+        where K: ConfigKey,
+              Fut: Future<Output=crate::error::Result<Option<serde_json::Value>>> {
+        self.inc_access();
+        let k = key.to_key().into_owned();
+        let guild_cache = self.ensure_guild_cache(gid).await;
+        let potential = guild_cache.read().await.get(&k).cloned();
+
+        let cv = match potential {
+            None => {
+                trace!("first read");
+                let mut wg = guild_cache.write().await;
+                self.inc_miss();
+                let e = wg.entry(k).or_default();
+                let v = f.await?;
+                if let Some(v) = &v {
+                    let mut optg = e.write().await;
+                    optg.insert(v.clone());
+                }
+
+                v
+            }
+            Some(v) => { v.read().await.clone() }
+        };
+
+        Ok(cv)
+    }
+}
+
+impl DbContext<'_> {
+    pub fn conn(&self) -> &PgPool {
+        &self.conn
+    }
+}
+
+impl<'pool> DbContext<'pool> {
+    pub fn new<'b: 'pool>(pool: &'b PgPool, guild: GuildId) -> Self {
+        Self {
+            guild,
+            conn: pool,
+        }
     }
 
-    pub async fn contains_key<B>(&self, key: B) -> crate::error::Result<bool>
-        where B: DbKey + Send + 'static {
-        let exists = self.do_async(move |c| {
-            c.tree.contains_key(key.to_key())
+    #[instrument(level = "trace", skip(self, key, def), fields(g = % self.guild, k = % key.to_key()))]
+    pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
+        where B: ConfigKey,
+              S: Serialize + DeserializeOwned {
+        let v = CONFIG_CACHE.get_or_insert_with(self.guild, key.to_key(), || async {
+            self.get_or_insert_uncached(key.to_key(), def).await
         }).await?;
-        Ok(exists)
+        Ok(serde_json::from_value(v)?)
     }
 
-    pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
-        where B: DbKey + Send + 'static,
-              D: DeserializeOwned + Send + 'static {
-        self.do_async(move |s| {
-            let res: crate::error::Result<_> = try {
-                s.tree.get(key.to_key())?
-                    .map_or(Ok(None), |v| rmp_serde::from_read(v.as_ref()))?
-            };
-            res
-        }).await
-    }
-}
+    pub async fn get_or_insert_uncached<B, S>(&self, key: B, def: S) -> crate::error::Result<serde_json::Value>
+        where B: ConfigKey,
+              S: Serialize + DeserializeOwned {
+        let v = serde_json::to_value(def)?;
+        let key = key.to_key();
 
-#[derive(Clone)]
-pub struct NamespacedDbContext {
-    namespace: Cow<'static, str>,
-    base: DbContext,
-}
-
-
-impl Deref for NamespacedDbContext {
-    type Target = DbContext;
-
-    fn deref(&self) -> &Self::Target {
-        &self.base
-    }
-}
-
-impl NamespacedDbContext {
-    pub async fn new<N>(guild: GuildId, namespace: N) -> crate::error::Result<Self> where N: Into<Cow<'static, str>> {
-        let namespace = namespace.into();
-        let base = DbContext::with_namespace(guild, &namespace)
+        let out: Option<serde_json::Value> = sqlx::query_scalar!(
+            r#"
+                SELECT res AS value FROM get_or_insert_config($1, $2, $3);
+                "#,
+                self.guild_as_i64(),
+                key.as_ref(),
+                v
+        )
+            .fetch_one(self.conn())
             .await?;
-        Ok(Self {
-            namespace,
-            base,
-        })
+        Ok(out.expect("Failed to submit value to DB?"))
     }
 
-    pub async fn with_global_namespace(namespace: &'static str) -> crate::error::Result<Self> {
-        let g = GuildId(0);
-        Self::new(g, namespace).await
+    #[instrument(level = "trace", skip(self, key, val), fields(g = % self.guild, k = % key.to_key()))]
+    pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
+        where B: ConfigKey,
+              S: Serialize {
+        CONFIG_CACHE.insert_with(self.guild, key.to_key(), self.insert_uncached(key.to_key(), val)).await
     }
 
-    /// Workaround for backwards compat.
-    pub async fn config_ctx(guild: GuildId) -> crate::error::Result<Self> {
-        Self::new(guild, "").await
+    pub async fn insert_uncached<B, S>(&self, key: B, val: S) -> crate::error::Result<serde_json::Value>
+        where B: ConfigKey,
+              S: Serialize {
+        let key = key.to_key();
+        let v = serde_json::to_value(val)?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO config_values (guild, name, value)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (guild, name) DO UPDATE
+                SET value = EXCLUDED.value;
+            "#,
+            self.guild_as_i64(),
+            key.as_ref(),
+            &v
+        )
+            .execute(self.conn())
+            .await
+            .map(|_| ())?;
+        Ok(v)
+    }
+
+    #[instrument(level = "trace", skip(self, key), fields(g = % self.guild, k = % key.to_key()))]
+    pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
+        where B: ConfigKey,
+              D: DeserializeOwned {
+        let v = CONFIG_CACHE.get(self.guild,
+                                 key.to_key(),
+                                 self.get_uncached(key.to_key())).await?;
+        Ok(v.map(|v| serde_json::from_value(v)).flip()?)
+    }
+
+    pub async fn get_uncached<B>(&self, key: B) -> crate::error::Result<Option<serde_json::Value>>
+        where B: ConfigKey {
+        let key = key.to_key();
+        let o: Option<ConfigRow> = sqlx::query_as!(
+            ConfigRow,
+            r#"
+            SELECT value FROM config_values WHERE guild = $1 AND name = $2;
+            "#,
+            self.guild_as_i64(),
+            key.as_ref(),
+        )
+            .fetch_optional(self.conn())
+            .await?;
+        Ok(o.map(|c| c.value))
     }
 }
 
-pub trait DbKey {
-    fn to_key(&self) -> Cow<[u8]>;
+pub trait ConfigKey {
+    fn to_key(&self) -> Cow<str>;
 }
 
-impl<T: AsRef<[u8]>> DbKey for T {
-    fn to_key(&self) -> Cow<[u8]> {
+impl<T: AsRef<str>> ConfigKey for T {
+    fn to_key(&self) -> Cow<str> {
         self.as_ref().into()
     }
 }
-
-#[macro_export]
-macro_rules! impl_id_db_key {
-    ($($key:path),+) => {
-        $(
-            impl $crate::db::DbKey for $key {
-                fn to_key(&self) -> Cow<[u8]> {
-                    self.0.0.to_be_bytes().to_vec().into()
-                }
-            }
-        )+
-    };
-}
-

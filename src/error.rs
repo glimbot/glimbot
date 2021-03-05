@@ -3,6 +3,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::fmt::Formatter;
 use std::result::Result as StdRes;
+use std::borrow::Cow;
 
 pub trait LogErrorExt {
     fn log_error(&self);
@@ -142,11 +143,14 @@ macro_rules! impl_std_from {
 }
 
 impl_std_from! {
-    sled::Error,
-    rmp_serde::decode::Error,
-    rmp_serde::encode::Error,
+    serde_json::Error,
+    sqlx::Error,
     SysError,
-    std::io::Error
+    std::io::Error,
+    dotenv::Error,
+    tracing::subscriber::SetGlobalDefaultError,
+    std::env::VarError,
+    sqlx::migrate::MigrateError
 }
 
 #[macro_export]
@@ -192,3 +196,47 @@ impl_err!(GuildNotInCache, "Couldn't find guild in cache.", false);
 impl_err!(RoleNotInCache, "Couldn't find role in cache.", false);
 impl_err!(InsufficientPermissions, "You do not have the permissions to run this command.", true);
 impl_err!(DeputyConfused, "Your role is not high enough in the hierarchy to do that.", true);
+
+pub trait DatabaseError {
+    fn constraint(&self) -> Option<&str>;
+    fn is_constraint(&self) -> bool;
+    fn is_unique(&self) -> bool;
+    fn is_check(&self) -> bool;
+    fn sqlstate(&self) -> Option<Cow<'_, str>>;
+}
+
+impl DatabaseError for sqlx::Error {
+    fn constraint(&self) -> Option<&str> {
+        match self {
+            sqlx::Error::Database(d) => {
+                d.constraint()
+            }
+            _ => {
+                None
+            }
+        }
+    }
+
+    fn is_constraint(&self) -> bool {
+        self.sqlstate().map_or(false, |c| c.starts_with("23"))
+    }
+
+    fn is_unique(&self) -> bool {
+        self.sqlstate().map_or(false, |c| c.starts_with("23505"))
+    }
+
+    fn is_check(&self) -> bool {
+        self.sqlstate().map_or(false, |c| c.starts_with("23515"))
+    }
+
+    fn sqlstate(&self) -> Option<Cow<'_, str>> {
+        match self {
+            sqlx::Error::Database(d) => {
+                d.code()
+            }
+            _ => {
+                None
+            }
+        }
+    }
+}

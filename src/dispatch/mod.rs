@@ -25,12 +25,20 @@ use serenity::client::bridge::gateway::ShardManager;
 use crate::dispatch::config::ValueType;
 use std::any::Any;
 use std::time::Instant;
+use sqlx::PgPool;
 
 pub struct Dispatch {
     owner: UserId,
     filters: Vec<Arc<dyn Module>>,
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
-    config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>
+    config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>,
+    pool: PgPool
+}
+
+impl Dispatch {
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
 }
 
 impl Dispatch {
@@ -72,12 +80,13 @@ impl std::error::Error for NoSuchCommand {}
 impl_user_err_from!(NoSuchCommand);
 
 impl Dispatch {
-    pub fn new(owner: UserId) -> Self {
+    pub fn new(owner: UserId, pool: PgPool) -> Self {
         Self {
             owner,
             filters: Vec::new(),
             modules: Default::default(),
-            config_values: Default::default()
+            config_values: Default::default(),
+            pool
         }
     }
 
@@ -135,6 +144,10 @@ impl Dispatch {
             return Err(UserError::new("Glimbot is not designed to respond to DMs.").into());
         };
         tracing::Span::current().record("g", &guild.0);
+        if new_message.author.id == ctx.cache.current_user_id().await {
+            trace!("Saw message from self. Ignoring.");
+            return Ok(());
+        }
         let first_bit = if let Some(c) = contents.chars().next() {
             c
         } else {
@@ -143,8 +156,7 @@ impl Dispatch {
         };
 
 
-        let db = DbContext::new(guild)
-            .await?;
+        let db = DbContext::new(self.pool(), guild);
 
         let command_char = self.config_value_t::<char>("command_prefix")?
             .get_or_default(&db)

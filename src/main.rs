@@ -10,11 +10,13 @@
 #![feature(const_panic)]
 #![feature(try_blocks)]
 #![feature(array_chunks)]
+#![feature(option_insert)]
 #![forbid(unsafe_code)]
 #![deny(unused_must_use)]
 
 #[macro_use] extern crate tracing;
 #[macro_use] extern crate serde;
+#[macro_use] extern crate sqlx;
 #[macro_use] extern crate shrinkwraprs;
 
 #[macro_use]
@@ -41,7 +43,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[doc(hidden)] // it's a main function
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> crate::error::Result<()> {
     better_panic::install();
     let _ = dotenv::dotenv()?;
     let sub = FmtSubscriber::builder()

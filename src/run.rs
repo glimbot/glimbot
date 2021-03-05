@@ -2,12 +2,12 @@ use serenity::client::bridge::gateway::GatewayIntents;
 use crate::module::status::START_TIME;
 use once_cell::sync::Lazy;
 use crate::dispatch::{ShardManKey, ArcDispatch};
-use crate::db::ensure_db;
 
 // Starts Glimbot.
-pub async fn start_bot() -> anyhow::Result<()> {
+pub async fn start_bot() -> crate::error::Result<()> {
 
-    let mut dispatch = crate::dispatch::Dispatch::new(std::env::var("GLIMBOT_OWNER").expect("Couldn't find owner information.").parse().expect("Invalid owner token."));
+    let pool = crate::db::create_pool().await?;
+    let mut dispatch = crate::dispatch::Dispatch::new(std::env::var("GLIMBOT_OWNER").expect("Couldn't find owner information.").parse().expect("Invalid owner token."), pool);
     dispatch.add_module(crate::module::base_filter::BaseFilter);
     dispatch.add_module(crate::module::owner::OwnerFilter);
     dispatch.add_module(crate::module::privilege::PrivilegeFilter);

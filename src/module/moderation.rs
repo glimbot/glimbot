@@ -10,7 +10,7 @@ use std::time::Duration;
 use serenity::model::id::{UserId, GuildId, MessageId, ChannelId};
 use chrono::Utc;
 use serenity::model::guild::Member;
-use crate::db::{DbContext, NamespacedDbContext};
+use crate::db::{DbContext};
 use std::borrow::{Cow, Borrow};
 use serenity::utils::{MessageBuilder, Color};
 use serenity::builder::{CreateEmbed, CreateMessage};
@@ -18,8 +18,6 @@ use serenity::model::guild::Target::User;
 use serenity::model::misc::Mentionable;
 use std::fmt;
 use std::fmt::Formatter;
-use sled::transaction::ConflictableTransactionError::Abort;
-use sled::transaction::TransactionError;
 use crate::error::Error;
 
 pub struct ModerationModule;
@@ -169,6 +167,7 @@ impl ModAction {
     pub fn duration(&self) -> Option<Duration> {
         self.duration
     }
+    pub fn guild(&self) -> GuildId { self.user().guild_id }
 }
 
 impl ModAction {
@@ -236,8 +235,7 @@ impl_err!(NoModChannelSet, "No mod channel has been set for this guild (mod_log_
 impl_err!(NoMuteRoleSet, "No mute role has been set for this guild (mute_role).", true);
 
 pub async fn mute_user(dis: &Dispatch, ctx: &Context, action: &ModAction) -> crate::error::Result<()> {
-    let cfg_db = NamespacedDbContext::config_ctx(action.user().guild_id)
-        .await?;
+    let cfg_db = DbContext::new(dis.pool(), action.guild());
     let mute_role = dis.config_value_t::<VerifiedRole>(MUTE_ROLE)?
         .get(&cfg_db)
         .await?
@@ -250,8 +248,7 @@ pub async fn mute_user(dis: &Dispatch, ctx: &Context, action: &ModAction) -> cra
 
 pub async fn report_action(dis: &Dispatch, ctx: &Context, action: &ModAction) -> crate::error::Result<()> {
     let mod_channel_v = dis.config_value_t::<VerifiedChannel>(MOD_CHANNEL)?;
-    let cfg_db = NamespacedDbContext::config_ctx(action.user().guild_id)
-        .await?;
+    let cfg_db = DbContext::new(dis.pool(), action.guild());
     let mod_channel = mod_channel_v.get(&cfg_db)
         .await?
         .ok_or(NoModChannelSet)?;
