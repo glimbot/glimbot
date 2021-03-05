@@ -23,9 +23,9 @@ pub enum ActionKind {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     expiry: chrono::DateTime<Utc>,
-    user: UserId,
+    target_user: UserId,
     guild: GuildId,
-    action: ActionKind
+    kind: ActionKind
 }
 
 pub const ONE_MINUTE: Lazy<Duration> = Lazy::new(|| Duration::minutes(1));
@@ -35,9 +35,9 @@ impl Action {
     pub fn new(user: UserId, guild: GuildId, action: ActionKind, expiry: impl Into<chrono::DateTime<Utc>>) -> Self {
         Self {
             expiry: expiry.into(),
-            user,
+            target_user: user,
             guild,
-            action
+            kind: action
         }
     }
 

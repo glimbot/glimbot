@@ -19,6 +19,7 @@ use serenity::model::misc::Mentionable;
 use std::fmt;
 use std::fmt::Formatter;
 use crate::error::Error;
+use crate::util::ClapExt;
 
 pub struct ModerationModule;
 
@@ -26,39 +27,49 @@ pub const TIMED_ACTION_KEY: &'static str = "timed";
 
 #[derive(Debug, StructOpt)]
 enum Action {
-    #[structopt(flatten)]
+    /// Warn a user and make a note in the mod log about it.
     Warn(CommonOpts),
-    #[structopt(flatten)]
+    /// Kick a user from the server.
     Kick(CommonOpts),
+    /// Ban a user from the server.
     Ban {
         #[structopt(flatten)]
         common: CommonOpts,
+        /// How long the user should be banned for. Specified in human format, i.e. "5d 2h 5m"
+        /// Max 100 years, min 1 minute.
         #[structopt(short = "d")]
         duration: Option<humantime::Duration>,
         #[structopt(short = "m")]
+        /// How many days of messages from the user should be deleted.
         delete_messages: Option<AtMostU64<7>>
     },
-    #[structopt(flatten)]
+    /// Bans a user with max number of days for message deletion, then unbans them.
+    /// Useful for deleting spam.
     SoftBan(CommonOpts),
+    /// Adds the muted user role to a user.
     Mute {
         #[structopt(flatten)]
         common: CommonOpts,
         #[structopt(short = "d")]
+        /// How long the user should be muted for. Specified in human format, i.e. "5d 2h 5m"
+        /// Max 100 years, min 1 minute.
         duration: Option<humantime::Duration>
     }
 }
 
 #[derive(Debug, StructOpt)]
 struct CommonOpts {
+    /// Which user the action should apply to.
     user: String,
+    /// Why the action is being taken.
     reason: String,
 }
 
 #[derive(Debug, StructOpt)]
+/// Command for moderating users.
 pub struct ModOpt {
     #[structopt(subcommand)]
     action: Action,
-
 }
 
 const MOD_CHANNEL: &'static str = "mod_log_channel";
@@ -78,8 +89,9 @@ impl Module for ModerationModule {
         &INFO
     }
 
-    async fn process(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
-        Err(UnimplementedModule.into())
+    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+        let opts = ModOpt::from_iter_with_help(command)?;
+        Ok(())
     }
 }
 

@@ -9,7 +9,7 @@ use crate::util::ClapExt;
 use itertools::{Either, Itertools};
 use crate::db::DbContext;
 use std::sync::Arc;
-use serenity::utils::MessageBuilder;
+use serenity::utils::{MessageBuilder, content_safe, ContentSafeOptions};
 
 pub struct ConfigModule;
 
@@ -83,10 +83,13 @@ impl Module for ConfigModule {
             }
         };
 
+        let message = content_safe(ctx,
+                                   message,
+                                   &ContentSafeOptions::default()
+                                       .display_as_member_from(gid)).await;
         let message = MessageBuilder::new()
             .push_codeblock_safe(message, None)
             .build();
-
         orig.reply(ctx, message).await?;
         Ok(())
     }
