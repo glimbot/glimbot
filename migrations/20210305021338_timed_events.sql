@@ -1,11 +1,9 @@
-CREATE TYPE kind AS ENUM ('Ban', 'Mute', 'Debug');
-
 CREATE TABLE timed_events
 (
     target_user BIGINT      NOT NULL,
     guild       BIGINT      NOT NULL,
     expiry      TIMESTAMPTZ NOT NULL,
-    action      kind        NOT NULL
+    action      JSONB        NOT NULL
 );
 
 CREATE INDEX timed_events_by_guild ON timed_events (guild);

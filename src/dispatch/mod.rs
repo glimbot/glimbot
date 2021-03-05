@@ -56,6 +56,9 @@ impl Dispatch {
     pub fn owner(&self) -> UserId {
         self.owner
     }
+    pub fn db(&self, gid: GuildId) -> DbContext {
+        DbContext::new(self.pool(), gid)
+    }
 }
 
 #[derive(Debug)]
@@ -179,12 +182,12 @@ impl Dispatch {
                     .instrument(debug_span!("applying filter", f=%f.info().name))
             }).await?;
 
-        let command = if let Some(c) = shlex::split(cmd_raw) {
+        let mut command = if let Some(c) = shlex::split(cmd_raw) {
             c
         } else {
             return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
         };
-
+        command[0] = cmd;
         let name = cmd_name;
         let cmd_mod = self.command_module(name)?;
         cmd_mod.process(self, ctx, &new_message, command)
@@ -246,8 +249,8 @@ struct BackgroundService {
 
 #[async_trait::async_trait]
 impl EventHandler for ArcDispatch {
-    #[instrument(level="info", skip(self, ctx, guilds), fields(shard=%ctx.shard_id))]
-    async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
+    #[instrument(level="info", skip(self, _ctx, _guilds), fields(shard=%_ctx.shard_id))]
+    async fn cache_ready(&self, _ctx: Context, _guilds: Vec<GuildId>) {
         info!("Starting background work service.");
 
     }

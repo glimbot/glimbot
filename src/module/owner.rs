@@ -37,7 +37,7 @@ impl Module for OwnerFilter {
         &MOD_INFO
     }
 
-    async fn filter(&self, dis: &Dispatch, ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(&self, dis: &Dispatch, _ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
         let cmd = name.as_str();
         let mod_info = dis.command_module(cmd)?;
         if mod_info.info().sensitivity == Sensitivity::Owner {

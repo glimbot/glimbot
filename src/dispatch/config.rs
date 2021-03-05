@@ -70,7 +70,7 @@ pub trait FromStrWithCtx: Sized {
 impl<T> FromStrWithCtx for T where T: FromStr, T::Err: std::error::Error + Send + Sized + 'static {
     type Err = <T as FromStr>::Err;
 
-    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
+    async fn from_str_with_ctx(s: &str, _ctx: &Context, _gid: GuildId) -> Result<Self, Self::Err> {
         Self::from_str(s)
     }
 }

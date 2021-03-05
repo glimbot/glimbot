@@ -18,7 +18,7 @@ impl Module for Shutdown {
         &INFO
     }
 
-    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(&self, _dis: &Dispatch, ctx: &Context, orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
         info!("received shutdown command");
         let man = {
             ctx.data.read().await.get::<ShardManKey>().expect("expected to see the shard manager.").clone()

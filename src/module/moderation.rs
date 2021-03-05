@@ -1,6 +1,4 @@
 use std::borrow::{Borrow, Cow};
-use std::time::Duration;
-
 use once_cell::sync::Lazy;
 use serenity::builder::CreateEmbed;
 use serenity::client::Context;
@@ -12,18 +10,30 @@ use serenity::utils::Color;
 use structopt::StructOpt;
 
 use crate::db::DbContext;
-use crate::dispatch::config::{Value, VerifiedChannel, VerifiedRole};
+use crate::dispatch::config::{Value, VerifiedChannel, VerifiedRole, VerifiedUser, FromStrWithCtx};
 use crate::dispatch::Dispatch;
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::util::ClapExt;
 use crate::util::constraints::AtMostU64;
+use humantime::Duration;
+use crate::db::timed::{Action, ONE_HUNDREDISH_YEARS};
 
 pub struct ModerationModule;
 
 pub const TIMED_ACTION_KEY: &str = "timed";
 
+
 #[derive(Debug, StructOpt)]
-enum Action {
+pub struct CommonOpts {
+    /// Which user the action should apply to.
+    user: String,
+    /// Why the action is being taken.
+    reason: Option<String>,
+}
+
+#[derive(Debug, StructOpt)]
+/// Command for moderating users.
+pub enum ModOpt {
     /// Warn a user and make a note in the mod log about it.
     Warn(CommonOpts),
     /// Kick a user from the server.
@@ -33,12 +43,12 @@ enum Action {
         #[structopt(flatten)]
         common: CommonOpts,
         /// How long the user should be banned for. Specified in human format, i.e. "5d 2h 5m"
-        /// Max 100 years, min 1 minute.
+        /// Max 100 years, min 1 minute. Very large values may be interpreted as indefinite in duration.
         #[structopt(short = "d")]
         duration: Option<humantime::Duration>,
         #[structopt(short = "m")]
         /// How many days of messages from the user should be deleted.
-        delete_messages: Option<AtMostU64<7>>
+        delete_messages: Option<AtMostU64<7>>,
     },
     /// Bans a user with max number of days for message deletion, then unbans them.
     /// Useful for deleting spam.
@@ -49,24 +59,48 @@ enum Action {
         common: CommonOpts,
         #[structopt(short = "d")]
         /// How long the user should be muted for. Specified in human format, i.e. "5d 2h 5m"
-        /// Max 100 years, min 1 minute.
-        duration: Option<humantime::Duration>
+        /// Max 100 years, min 1 minute. Very large values may be interpreted as indefinite in duration.
+        duration: Option<humantime::Duration>,
+    },
+}
+
+impl ModOpt {
+    pub fn common_args(&self) -> &CommonOpts {
+        match self {
+            ModOpt::Warn(c) => { c }
+            ModOpt::Kick(c) => { c }
+            ModOpt::Ban { common, .. } => { common }
+            ModOpt::SoftBan(c) => { c }
+            ModOpt::Mute { common, .. } => { common }
+        }
     }
-}
 
-#[derive(Debug, StructOpt)]
-struct CommonOpts {
-    /// Which user the action should apply to.
-    user: String,
-    /// Why the action is being taken.
-    reason: String,
-}
+    pub fn kind(&self) -> ActionKind {
+        use ActionKind::*;
+        match self {
+            ModOpt::Warn(_) => { Warn }
+            ModOpt::Kick(_) => { Kick }
+            ModOpt::Ban { .. } => { Ban }
+            ModOpt::SoftBan(_) => { SoftBan }
+            ModOpt::Mute { .. } => { Mute }
+        }
+    }
 
-#[derive(Debug, StructOpt)]
-/// Command for moderating users.
-pub struct ModOpt {
-    #[structopt(subcommand)]
-    action: Action,
+    pub fn duration(&self) -> Option<Duration> {
+        let d = match self {
+            ModOpt::Ban { duration, .. } => { duration.clone() }
+            ModOpt::Mute { duration, .. } => { duration.clone() }
+            _ => None
+        };
+        d
+    }
+
+    pub fn deletion_time(&self) -> Option<AtMostU64<7>> {
+        match self {
+            ModOpt::Ban { delete_messages, .. } => {delete_messages.clone()}
+            _ => None
+        }
+    }
 }
 
 const MOD_CHANNEL: &str = "mod_log_channel";
@@ -87,7 +121,35 @@ impl Module for ModerationModule {
     }
 
     async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+        let gid = orig.guild_id.unwrap();
         let opts = ModOpt::from_iter_with_help(command)?;
+        let common = opts.common_args();
+        let kind = opts.kind();
+        let orig_mess = orig.message_reference.as_ref().map(|m| m.message_id).flatten();
+        let duration = opts.duration();
+        let channel = orig.channel_id;
+
+        let user = VerifiedUser::from_str_with_ctx(&common.user, ctx, gid).await?;
+        let member = gid.member(ctx, user.into_inner()).await?;
+
+        let mut action = ModAction::new(&member,
+                                        channel,
+                                        orig.author.id,
+                                        kind)
+            .with_duration(duration);
+
+        if let Some(m) = orig_mess {
+            action = action.with_original_message(m);
+        }
+
+        if let Some(r) = common.reason.clone() {
+            action = action.with_reason(r);
+        }
+
+        action.act(dis, ctx).await?;
+        action.report_action(dis, ctx).await?;
+        orig.react(ctx, '✅').await?;
+
         Ok(())
     }
 }
@@ -99,7 +161,7 @@ pub enum ActionKind {
     Kick,
     SoftBan,
     Ban,
-    Mute
+    Mute,
 }
 
 impl ActionKind {
@@ -119,34 +181,34 @@ impl ActionKind {
 
     pub const fn name(&self) -> &'static str {
         match self {
-            ActionKind::Warn => {"warning"}
-            ActionKind::Kick => {"kick"}
-            ActionKind::SoftBan => {"soft ban"}
-            ActionKind::Ban => {"ban"}
-            ActionKind::Mute => {"mute"}
+            ActionKind::Warn => { "warning" }
+            ActionKind::Kick => { "kick" }
+            ActionKind::SoftBan => { "soft ban" }
+            ActionKind::Ban => { "ban" }
+            ActionKind::Mute => { "mute" }
         }
     }
 
     pub const fn title_name(&self) -> &'static str {
         match self {
-            ActionKind::Warn => {"Warning"}
-            ActionKind::Kick => {"Kick"}
-            ActionKind::SoftBan => {"Soft ban"}
-            ActionKind::Ban => {"Ban"}
-            ActionKind::Mute => {"Mute"}
+            ActionKind::Warn => { "Warning" }
+            ActionKind::Kick => { "Kick" }
+            ActionKind::SoftBan => { "Soft ban" }
+            ActionKind::Ban => { "Ban" }
+            ActionKind::Mute => { "Mute" }
         }
     }
 
     pub const fn has_duration(&self) -> bool {
         match self {
             ActionKind::Ban |
-            ActionKind::Mute => {true}
+            ActionKind::Mute => { true }
             _ => false
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct ModAction {
     user: Member,
     action: ActionKind,
@@ -155,6 +217,13 @@ pub struct ModAction {
     reason: Option<Cow<'static, str>>,
     original_message: Option<MessageId>,
     duration: Option<Duration>,
+    deletion_days: Option<AtMostU64<7>>
+}
+
+impl ModAction {
+    pub fn deletion_days(&self) -> Option<AtMostU64<7>> {
+        self.deletion_days
+    }
 }
 
 impl ModAction {
@@ -167,8 +236,8 @@ impl ModAction {
     pub fn moderator(&self) -> UserId {
         self.moderator
     }
-    pub fn reason(&self) -> &Option<Cow<'static, str>> {
-        &self.reason
+    pub fn reason(&self) -> &str {
+        self.reason.as_ref().map(|r| r.as_ref()).unwrap_or("No reason specified.")
     }
     pub fn original_message(&self) -> Option<MessageId> {
         self.original_message
@@ -188,8 +257,43 @@ impl ModAction {
             channel: channel_id,
             reason: None,
             original_message: None,
-            duration: None
+            duration: None,
+            deletion_days: None,
         }
+    }
+
+    pub async fn act(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
+        match self.action {
+            ActionKind::Warn => {}
+            ActionKind::Kick => {
+                self.user().kick_with_reason(ctx, self.reason()).await?;
+            }
+            ActionKind::SoftBan => {
+                self.user().ban_with_reason(ctx, 7, self.reason()).await?;
+                self.user().unban(ctx).await?;
+            }
+            ActionKind::Ban => {
+                self.user().ban_with_reason(ctx,
+                                            self.deletion_days.map(Into::into).unwrap_or(0u64) as u8,
+                                            self.reason()).await?;
+            }
+            ActionKind::Mute => {self.mute_user(dis, ctx).await?;}
+        }
+
+        if let Some(d) = self.duration() {
+            let chrono_dur = chrono::Duration::from_std(*d).unwrap_or_else(|_| (*ONE_HUNDREDISH_YEARS).clone());
+            let a = match self.action {
+                ActionKind::Ban => {
+                    Action::unban(self.user().user.id, self.guild(), chrono_dur)
+                }
+                ActionKind::Mute => {
+                    Action::unmute(self.user().user.id, self.guild(), chrono_dur)
+                }
+                _ => {warn!("Got a duration with a nonsensical attribute."); return Ok(())}
+            };
+            a.store_action(dis).await?;
+        }
+        Ok(())
     }
 
     pub fn with_duration(mut self, duration: Option<Duration>) -> Self {
@@ -221,48 +325,55 @@ impl ModAction {
 
         if self.action.has_duration() {
             let dur = self.duration.as_ref()
-                .map(|d| humantime::format_duration(*d)
-                .to_string()
+                .map(|d| d
+                    .to_string()
                     .into())
-                .unwrap_or_else(|| Cow::from("indefinite"));
+                .unwrap_or_else(|| Cow::from("Indefinite"));
 
             embed.field("Duration", dur, false);
         }
 
         if let Some(m) = self.original_message {
             let url = format!("https://discord.com/channels/{gid}/{chan}/{mess}",
-                gid=self.user.guild_id,
-                chan=self.channel,
-                mess=m
+                              gid = self.user.guild_id,
+                              chan = self.channel,
+                              mess = m
             );
             embed.field("In response to", url, false);
         }
+    }
+
+    pub async fn mute_user(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
+        let action = self;
+        let cfg_db = DbContext::new(dis.pool(), action.guild());
+        let mute_role = dis.config_value_t::<VerifiedRole>(MUTE_ROLE)?
+            .get(&cfg_db)
+            .await?
+            .ok_or(NoMuteRoleSet)?;
+        let mut mem = action.user().clone();
+        mem.add_role(ctx, mute_role.into_inner()).await?;
+        Ok(())
+    }
+
+    pub async fn report_action(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
+        let action = self;
+        let mod_channel_v = dis.config_value_t::<VerifiedChannel>(MOD_CHANNEL)?;
+        let cfg_db = DbContext::new(dis.pool(), action.guild());
+        let mod_channel = mod_channel_v.get(&cfg_db)
+            .await?
+            .ok_or(NoModChannelSet)?;
+        mod_channel.into_inner().send_message(ctx, |e| {
+            e.embed(|emb| {
+                action.create_embed(emb);
+                emb
+            })
+        }).await?;
+        Ok(())
     }
 }
 
 impl_err!(NoModChannelSet, "No mod channel has been set for this guild (mod_log_channel).", true);
 impl_err!(NoMuteRoleSet, "No mute role has been set for this guild (mute_role).", true);
 
-pub async fn mute_user(dis: &Dispatch, ctx: &Context, action: &ModAction) -> crate::error::Result<()> {
-    let cfg_db = DbContext::new(dis.pool(), action.guild());
-    let mute_role = dis.config_value_t::<VerifiedRole>(MUTE_ROLE)?
-        .get(&cfg_db)
-        .await?
-        .ok_or(NoMuteRoleSet)?;
-    let mut mem = action.user().clone();
-    mem.add_role(ctx, mute_role.into_inner()).await?;
-    todo!("add store for non-indefinite case");
-    report_action(dis, ctx, action).await
-}
 
-pub async fn report_action(dis: &Dispatch, ctx: &Context, action: &ModAction) -> crate::error::Result<()> {
-    let mod_channel_v = dis.config_value_t::<VerifiedChannel>(MOD_CHANNEL)?;
-    let cfg_db = DbContext::new(dis.pool(), action.guild());
-    let mod_channel = mod_channel_v.get(&cfg_db)
-        .await?
-        .ok_or(NoModChannelSet)?;
-    mod_channel.into_inner().send_message(ctx, |e| {
-        e.embed(|emb| { action.create_embed(emb); emb })
-    }).await?;
-    Ok(())
-}
+
