@@ -43,7 +43,7 @@ impl Module for StatusModule {
         Ok(name)
     }
 
-    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, _: Vec<String>) -> crate::error::Result<()> {
+    async fn process(&self, _dis: &Dispatch, ctx: &Context, orig: &Message, _: Vec<String>) -> crate::error::Result<()> {
         let mut elapsed = START_TIME.elapsed();
         elapsed -= Duration::from_nanos(elapsed.subsec_nanos() as u64);
         let pretty_elapsed = humantime::format_duration(elapsed);

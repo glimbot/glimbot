@@ -1,13 +1,17 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Formatter;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use futures::stream;
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use linked_hash_map::LinkedHashMap;
+use once_cell::sync::{Lazy, OnceCell};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use serenity::client::{Context, EventHandler};
 use serenity::client::bridge::gateway::ShardManager;
 use serenity::model::channel::Message;
@@ -20,6 +24,7 @@ use tokio::sync::Mutex;
 use tracing::Instrument;
 
 use crate::db::DbContext;
+use crate::db::timed::TimedEvents;
 use crate::dispatch::config::ValueType;
 use crate::error::{LogErrorExt, SysError, UserError};
 use crate::module::Module;
@@ -31,7 +36,8 @@ pub struct Dispatch {
     filters: Vec<Arc<dyn Module>>,
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
     config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>,
-    pool: PgPool
+    pool: PgPool,
+    background_service: OnceCell<Arc<BackgroundService>>,
 }
 
 impl Dispatch {
@@ -88,7 +94,8 @@ impl Dispatch {
             filters: Vec::new(),
             modules: Default::default(),
             config_values: Default::default(),
-            pool
+            background_service: Default::default(),
+            pool,
         }
     }
 
@@ -208,7 +215,7 @@ impl EventHandler for Dispatch {
         res.log_error();
         if let Err(e) = res {
             let mb = if e.is_user_error() {
-                 MessageBuilder::new()
+                MessageBuilder::new()
                     .push_codeblock_safe(format!("{}", e), None)
                     .build()
             } else {
@@ -243,16 +250,63 @@ impl From<Dispatch> for ArcDispatch {
 }
 
 struct BackgroundService {
-    dispatch: ArcDispatch,
+    dispatch: Weak<Dispatch>,
     ctx: Context,
+    started: AtomicBool,
+}
+
+impl BackgroundService {
+    pub async fn start(&self) {
+        if self.started.fetch_or(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+
+        while let Some(d) = self.dispatch.upgrade() {
+            interval.tick().await;
+            self.process_events(&d).await.log_error();
+        }
+    }
+
+    #[instrument(level = "info", skip(self, dis))]
+    pub async fn process_events(&self, dis: &Dispatch) -> crate::error::Result<()> {
+        let mut batch = TimedEvents::get_actions_before(dis.pool(),
+                                                        chrono::DateTime::from(chrono::Local::now()),
+        ).await?;
+
+        // Avoid a long sequence of the same guild from bulk actions
+        batch.shuffle(&mut thread_rng());
+
+        if batch.len() > 0 {
+            debug!("got {} events", batch.len());
+        }
+
+        for a in batch {
+            let r = a.act(dis, &self.ctx).await;
+            r.log_error();
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
 impl EventHandler for ArcDispatch {
-    #[instrument(level="info", skip(self, _ctx, _guilds), fields(shard=%_ctx.shard_id))]
-    async fn cache_ready(&self, _ctx: Context, _guilds: Vec<GuildId>) {
-        info!("Starting background work service.");
+    #[instrument(level = "info", skip(self, ctx, _guilds), fields(shard = % ctx.shard_id))]
+    async fn cache_ready(&self, ctx: Context, _guilds: Vec<GuildId>) {
+        let service = self.0.background_service.get_or_init(|| {
+            BackgroundService {
+                dispatch: Arc::downgrade(self.as_ref()),
+                ctx,
+                started: Default::default(),
+            }.into()
+        });
 
+        let s = service.clone();
+        tokio::task::spawn(async move {
+            s.start().await
+        });
     }
 
     async fn message(&self, ctx: Context, new_message: Message) {

@@ -8,11 +8,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serenity::model::id::GuildId;
-use sqlx::PgPool;
 use sqlx::migrate::Migrator;
+use sqlx::PgPool;
 use sqlx::postgres::PgConnectOptions;
 use tokio::sync::RwLock;
 

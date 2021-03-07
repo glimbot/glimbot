@@ -1,4 +1,6 @@
 use std::borrow::{Borrow, Cow};
+
+use humantime::Duration;
 use once_cell::sync::Lazy;
 use serenity::builder::CreateEmbed;
 use serenity::client::Context;
@@ -10,13 +12,12 @@ use serenity::utils::Color;
 use structopt::StructOpt;
 
 use crate::db::DbContext;
-use crate::dispatch::config::{Value, VerifiedChannel, VerifiedRole, VerifiedUser, FromStrWithCtx};
+use crate::db::timed::{Action, ONE_HUNDREDISH_YEARS};
+use crate::dispatch::config::{FromStrWithCtx, Value, VerifiedChannel, VerifiedRole, VerifiedUser};
 use crate::dispatch::Dispatch;
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::util::ClapExt;
 use crate::util::constraints::AtMostU64;
-use humantime::Duration;
-use crate::db::timed::{Action, ONE_HUNDREDISH_YEARS};
 
 pub struct ModerationModule;
 
@@ -105,7 +106,7 @@ impl ModOpt {
 
 const MOD_CHANNEL: &str = "mod_log_channel";
 
-const MUTE_ROLE: &str = "mute_role";
+pub(crate) const MUTE_ROLE: &str = "mute_role";
 
 #[async_trait::async_trait]
 impl Module for ModerationModule {
@@ -167,7 +168,7 @@ pub enum ActionKind {
 impl ActionKind {
     pub const SAFETY_YELLOW: Color = Color::new(0xEED202);
     pub const SAFETY_ORANGE: Color = Color::new(0xFF6700);
-    pub const TRAFFIC_RED: Color = Color::new(0xB8D113);
+    pub const TRAFFIC_RED: Color = Color::new(0xBB1310);
 
     pub const fn color(&self) -> Color {
         match self {
@@ -179,7 +180,7 @@ impl ActionKind {
         }
     }
 
-    pub const fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &str {
         match self {
             ActionKind::Warn => { "warning" }
             ActionKind::Kick => { "kick" }
@@ -189,7 +190,7 @@ impl ActionKind {
         }
     }
 
-    pub const fn title_name(&self) -> &'static str {
+    pub const fn title_name(&self) -> &str {
         match self {
             ActionKind::Warn => { "Warning" }
             ActionKind::Kick => { "Kick" }

@@ -5,10 +5,8 @@ use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
 use serenity::model::prelude::RoleId;
-use serenity::utils::MessageBuilder;
 use shrinkwraprs::Shrinkwrap;
 use structopt::StructOpt;
-use sqlx::Execute;
 
 use crate::db::DbContext;
 use crate::dispatch::config::{FromStrWithCtx, NoSuchUser, RoleExt, VerifiedUser};
@@ -18,7 +16,6 @@ use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache, UserError};
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::module::privilege::ensure_authorized_for_role;
 use crate::util::ClapExt;
-use sqlx::query::Query;
 
 pub struct RoleModule;
 
