@@ -1,11 +1,12 @@
-use crate::dispatch::{Dispatch, config};
-use serenity::client::Context;
-use std::collections::HashSet;
+use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Formatter;
-use serenity::model::channel::Message;
 use std::sync::Arc;
-use std::cmp::Ordering;
+
+use serenity::client::Context;
+use serenity::model::channel::Message;
+
+use crate::dispatch::{config, Dispatch};
 
 pub mod status;
 pub mod owner;

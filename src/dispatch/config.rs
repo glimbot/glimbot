@@ -2,20 +2,18 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use downcast_rs::DowncastSync;
 use downcast_rs::impl_downcast;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serenity::client::Context;
-use serenity::model::id::{GuildId, RoleId, ChannelId, UserId};
-
-use crate::db::{DbContext, ConfigKey};
-use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache};
-use std::borrow::Cow;
-use serenity::model::misc::Mentionable;
 use serenity::model::guild::Member;
+use serenity::model::id::{ChannelId, GuildId, RoleId, UserId};
+use serenity::model::misc::Mentionable;
+
+use crate::db::DbContext;
+use crate::error::{GuildNotInCache, IntoBotErr, SysError, UserError};
 
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 
@@ -72,7 +70,7 @@ pub trait FromStrWithCtx: Sized {
 impl<T> FromStrWithCtx for T where T: FromStr, T::Err: std::error::Error + Send + Sized + 'static {
     type Err = <T as FromStr>::Err;
 
-    async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
+    async fn from_str_with_ctx(s: &str, _ctx: &Context, _gid: GuildId) -> Result<Self, Self::Err> {
         Self::from_str(s)
     }
 }

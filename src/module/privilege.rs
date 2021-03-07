@@ -1,22 +1,17 @@
-use std::fmt;
-use std::fmt::Formatter;
-use std::ops::Deref;
-use std::str::FromStr;
-
 use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
-use serenity::model::id::{GuildId, RoleId};
+use serenity::model::guild::{Member, Role};
+
 use crate::db::DbContext;
 use crate::dispatch::{config, Dispatch};
-use crate::dispatch::config::{FromStrWithCtx, VerifiedRole};
-use crate::error::{IntoBotErr, SysError, UserError, GuildNotInCache, RoleNotInCache, InsufficientPermissions, DeputyConfused};
+use crate::dispatch::config::VerifiedRole;
+use crate::error::{DeputyConfused, GuildNotInCache, RoleNotInCache, SysError, UserError};
 use crate::module::{ModInfo, Module, Sensitivity};
-use serenity::model::guild::{Member, Role};
 
 pub struct PrivilegeFilter;
 
-pub const PRIV_NAME: &'static str = "privileged_role";
+pub const PRIV_NAME: &str = "privileged_role";
 
 #[async_trait::async_trait]
 impl Module for PrivilegeFilter {

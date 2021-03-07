@@ -40,6 +40,21 @@
       "nullable": []
     }
   },
+  "427dafd6d77940586fe40f457faf393de8a669c2a159921ebe67f801b29903d3": {
+    "query": "\n            INSERT INTO timed_events (target_user, guild, action, expiry) VALUES ($1, $2, $3, $4);\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8",
+          "Jsonb",
+          "Timestamptz"
+        ]
+      },
+      "nullable": []
+    }
+  },
   "4f7e8fb83bd3feb0cad3584912af6e93810f7c4c821c37e31adf807defe08b2f": {
     "query": "SELECT role FROM joinable_roles WHERE guild = $1 ORDER BY role ASC;",
     "describe": {
@@ -81,6 +96,21 @@
       ]
     }
   },
+  "94e4dd7e9ada1b91a831b83afc259c3339778bba5ef1f064a7f0dc67c29ee9c7": {
+    "query": "\n            DELETE FROM timed_events WHERE target_user = $1\n                                       AND guild = $2\n                                       AND action = $3\n                                       AND expiry = $4;\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8",
+          "Jsonb",
+          "Timestamptz"
+        ]
+      },
+      "nullable": []
+    }
+  },
   "b623ff8c0ba7b8ad23fb65599ebc0b888c7d9bae0ec6a8d5e81cfb30ac3d6c75": {
     "query": "\n            SELECT value FROM config_values WHERE guild = $1 AND name = $2;\n            ",
     "describe": {
@@ -98,6 +128,45 @@
         ]
       },
       "nullable": [
+        false
+      ]
+    }
+  },
+  "c51c3a4dde0e93eca2acb1a9c6c91f08ef8a7d2f72c82b143e1e18d0cf3018ca": {
+    "query": "\n            SELECT * FROM timed_events WHERE expiry <= $1 LIMIT $2;\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "target_user",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "guild",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 2,
+          "name": "expiry",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 3,
+          "name": "action",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Timestamptz",
+          "Int8"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
         false
       ]
     }

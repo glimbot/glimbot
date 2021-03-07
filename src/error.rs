@@ -1,9 +1,9 @@
+use std::borrow::Cow;
 use std::error::Error as StdErr;
 use std::fmt;
-use std::ops::Deref;
 use std::fmt::Formatter;
+use std::ops::Deref;
 use std::result::Result as StdRes;
-use std::borrow::Cow;
 
 pub trait LogErrorExt {
     fn log_error(&self);

@@ -1,30 +1,24 @@
-use once_cell::sync::Lazy;
-use std::path::{Path, PathBuf};
-use std::io;
-use serenity::model::id::{GuildId, UserId, ChannelId, RoleId};
-use tokio::task;
-use byteorder::ByteOrder;
-use serde::{Serialize, Deserialize};
-use serde::de::DeserializeOwned;
-use serenity::futures::StreamExt;
 use std::borrow::Cow;
-use std::ops::Deref;
-use smallvec::SmallVec;
-use crate::util::FlipResultExt;
-use sqlx::pool::PoolConnection;
-use sqlx::{Postgres, PgPool, Acquire};
-use sqlx::types::Json;
-use sqlx::postgres::PgConnectOptions;
-use std::str::FromStr;
-use sqlx::migrate::Migrator;
-use tokio::sync::{Mutex, RwLock};
-use std::hash::Hash;
 use std::collections::HashMap;
-use std::sync::Arc;
-use serde_json::Value;
-use futures::TryFuture;
 use std::future::Future;
+use std::io;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use once_cell::sync::Lazy;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use serenity::model::id::GuildId;
+use sqlx::migrate::Migrator;
+use sqlx::PgPool;
+use sqlx::postgres::PgConnectOptions;
+use tokio::sync::RwLock;
+
+use crate::util::FlipResultExt;
+
+pub mod timed;
 
 pub fn default_data_folder() -> PathBuf {
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -93,11 +87,11 @@ pub struct ConfigCache {
     cache_accesses: AtomicU64,
 }
 
-pub static CONFIG_CACHE: Lazy<ConfigCache> = Lazy::new(|| Default::default());
+pub static CONFIG_CACHE: Lazy<ConfigCache> = Lazy::new(Default::default);
 
 pub struct CacheStats {
     pub accesses: u64,
-    pub misses: u64
+    pub misses: u64,
 }
 
 impl ConfigCache {
@@ -132,7 +126,7 @@ impl ConfigCache {
     pub fn statistics(&self) -> CacheStats {
         CacheStats {
             accesses: self.cache_accesses.load(Ordering::Relaxed),
-            misses: self.cache_misses.load(Ordering::Relaxed)
+            misses: self.cache_misses.load(Ordering::Relaxed),
         }
     }
 
@@ -290,7 +284,7 @@ impl<'pool> DbContext<'pool> {
         let v = CONFIG_CACHE.get(self.guild,
                                  key.to_key(),
                                  self.get_uncached(key.to_key())).await?;
-        Ok(v.map(|v| serde_json::from_value(v)).flip()?)
+        Ok(v.map(serde_json::from_value).flip()?)
     }
 
     pub async fn get_uncached<B>(&self, key: B) -> crate::error::Result<Option<serde_json::Value>>

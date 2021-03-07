@@ -1,11 +1,13 @@
-use crate::module::{ModInfo, Sensitivity, Module};
-use once_cell::sync::Lazy;
-use serenity::client::Context;
-use crate::dispatch::Dispatch;
+use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
-use std::error::Error;
+
+use once_cell::sync::Lazy;
+use serenity::client::Context;
 use serenity::model::channel::Message;
+
+use crate::dispatch::Dispatch;
+use crate::module::{ModInfo, Module, Sensitivity};
 
 static MOD_INFO: Lazy<ModInfo> = Lazy::new(|| {
     ModInfo::with_name("owner-check")
@@ -35,7 +37,7 @@ impl Module for OwnerFilter {
         &MOD_INFO
     }
 
-    async fn filter(&self, dis: &Dispatch, ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(&self, dis: &Dispatch, _ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
         let cmd = name.as_str();
         let mod_info = dis.command_module(cmd)?;
         if mod_info.info().sensitivity == Sensitivity::Owner {

@@ -1,9 +1,10 @@
+#![allow(clippy::from_over_into)]
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Formatter;
-use std::convert::TryFrom;
+use std::str::FromStr;
 
-use crate::error;
 use crate::error::Error;
 
 #[derive(Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -124,6 +125,16 @@ impl<const MIN: i64, const MAX: i64> From<ConstraintFailureI64<MIN, MAX>> for Er
 impl<const MIN: u64, const MAX: u64> From<ConstraintFailureU64<MIN, MAX>> for Error {
     fn from(e: ConstraintFailureU64<MIN, MAX>) -> Self {
         Error::from_err(e, true)
+    }
+}
+
+impl<const MIN: u64, const MAX: u64> FromStr for ConstrainedU64<MIN, MAX> {
+    type Err = crate::error::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<u64>()
+            .map_err(|e| Self::Err::from_err(e, true))
+            .and_then(|u| Self::try_from(u).map_err(Error::from))
     }
 }
 

@@ -1,5 +1,6 @@
-use clap::ArgMatches;
 use std::borrow::Cow;
+
+use clap::ArgMatches;
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "examples/"]

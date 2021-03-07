@@ -40,6 +40,7 @@ shellexpand = "2.1"
 dirs = "3.0"
 byteorder = "1"
 humantime = "2.1"
+chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.2", features = ["full"] }
@@ -52,6 +53,8 @@ strip-ansi-escapes = "0.1.0"
 shrinkwraprs = "0.3"
 smallvec = "1.6"
 sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "json", "offline"]}
+rand = "0.8"
+zerocopy = "0.3"
 
 [dependencies.serenity]
 version = "0.10"
@@ -69,3 +72,6 @@ features = [
 
 [target.'cfg(target_env = "gnu")'.dependencies]
 jemallocator = "0.3"
+
+[dev-dependencies]
+more-asserts = "0.2"

@@ -1,38 +1,43 @@
-pub mod config;
-
-use serenity::model::id::UserId;
-use once_cell::sync::OnceCell;
-use tokio::sync::{RwLock, Mutex};
-use serenity::client::{Context, EventHandler};
-use serenity::model::gateway::{Ready, Activity};
-use serenity::model::channel::Message;
-use std::sync::Arc;
-use crate::module::Module;
-use linked_hash_map::LinkedHashMap;
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Formatter;
-use std::borrow::Cow;
-use crate::db::DbContext;
-use crate::error::{LogErrorExt, UserError, SysError};
-use serenity::utils::MessageBuilder;
-use tracing::Instrument;
-use futures::TryStreamExt;
+use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
+
 use futures::stream;
 use futures::stream::StreamExt;
-use std::collections::HashMap;
-use serenity::prelude::TypeMapKey;
+use futures::TryStreamExt;
+use linked_hash_map::LinkedHashMap;
+use once_cell::sync::{Lazy, OnceCell};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use serenity::client::{Context, EventHandler};
 use serenity::client::bridge::gateway::ShardManager;
-use crate::dispatch::config::ValueType;
-use std::any::Any;
-use std::time::Instant;
+use serenity::model::channel::Message;
+use serenity::model::gateway::{Activity, Ready};
+use serenity::model::id::{GuildId, UserId};
+use serenity::prelude::TypeMapKey;
+use serenity::utils::MessageBuilder;
 use sqlx::PgPool;
+use tokio::sync::Mutex;
+use tracing::Instrument;
+
+use crate::db::DbContext;
+use crate::db::timed::TimedEvents;
+use crate::dispatch::config::ValueType;
+use crate::error::{LogErrorExt, SysError, UserError};
+use crate::module::Module;
+
+pub mod config;
 
 pub struct Dispatch {
     owner: UserId,
     filters: Vec<Arc<dyn Module>>,
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
     config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>,
-    pool: PgPool
+    pool: PgPool,
+    background_service: OnceCell<Arc<BackgroundService>>,
 }
 
 impl Dispatch {
@@ -56,6 +61,9 @@ impl TypeMapKey for ShardManKey {
 impl Dispatch {
     pub fn owner(&self) -> UserId {
         self.owner
+    }
+    pub fn db(&self, gid: GuildId) -> DbContext {
+        DbContext::new(self.pool(), gid)
     }
 }
 
@@ -86,7 +94,8 @@ impl Dispatch {
             filters: Vec::new(),
             modules: Default::default(),
             config_values: Default::default(),
-            pool
+            background_service: Default::default(),
+            pool,
         }
     }
 
@@ -180,12 +189,12 @@ impl Dispatch {
                     .instrument(debug_span!("applying filter", f=%f.info().name))
             }).await?;
 
-        let command = if let Some(c) = shlex::split(cmd_raw) {
+        let mut command = if let Some(c) = shlex::split(cmd_raw) {
             c
         } else {
             return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
         };
-
+        command[0] = cmd;
         let name = cmd_name;
         let cmd_mod = self.command_module(name)?;
         cmd_mod.process(self, ctx, &new_message, command)
@@ -206,7 +215,7 @@ impl EventHandler for Dispatch {
         res.log_error();
         if let Err(e) = res {
             let mb = if e.is_user_error() {
-                 MessageBuilder::new()
+                MessageBuilder::new()
                     .push_codeblock_safe(format!("{}", e), None)
                     .build()
             } else {
@@ -227,5 +236,84 @@ impl EventHandler for Dispatch {
     async fn ready(&self, ctx: Context, rdy: Ready) {
         info!("up and running in {} guilds.", rdy.guilds.len());
         ctx.set_activity(Activity::playing("Cultist Simulator")).await;
+    }
+}
+
+
+#[derive(Shrinkwrap, Clone)]
+pub struct ArcDispatch(Arc<Dispatch>);
+
+impl From<Dispatch> for ArcDispatch {
+    fn from(d: Dispatch) -> Self {
+        ArcDispatch(Arc::new(d))
+    }
+}
+
+struct BackgroundService {
+    dispatch: Weak<Dispatch>,
+    ctx: Context,
+    started: AtomicBool,
+}
+
+impl BackgroundService {
+    pub async fn start(&self) {
+        if self.started.fetch_or(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+
+        while let Some(d) = self.dispatch.upgrade() {
+            interval.tick().await;
+            self.process_events(&d).await.log_error();
+        }
+    }
+
+    #[instrument(level = "info", skip(self, dis))]
+    pub async fn process_events(&self, dis: &Dispatch) -> crate::error::Result<()> {
+        let mut batch = TimedEvents::get_actions_before(dis.pool(),
+                                                        chrono::DateTime::from(chrono::Local::now()),
+        ).await?;
+
+        // Avoid a long sequence of the same guild from bulk actions
+        batch.shuffle(&mut thread_rng());
+
+        if batch.len() > 0 {
+            debug!("got {} events", batch.len());
+        }
+
+        for a in batch {
+            let r = a.act(dis, &self.ctx).await;
+            r.log_error();
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl EventHandler for ArcDispatch {
+    #[instrument(level = "info", skip(self, ctx, _guilds), fields(shard = % ctx.shard_id))]
+    async fn cache_ready(&self, ctx: Context, _guilds: Vec<GuildId>) {
+        let service = self.0.background_service.get_or_init(|| {
+            BackgroundService {
+                dispatch: Arc::downgrade(self.as_ref()),
+                ctx,
+                started: Default::default(),
+            }.into()
+        });
+
+        let s = service.clone();
+        tokio::task::spawn(async move {
+            s.start().await
+        });
+    }
+
+    async fn message(&self, ctx: Context, new_message: Message) {
+        self.0.message(ctx, new_message).await
+    }
+
+    async fn ready(&self, ctx: Context, rdy: Ready) {
+        self.0.ready(ctx, rdy).await
     }
 }
