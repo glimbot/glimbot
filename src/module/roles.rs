@@ -15,7 +15,7 @@ use crate::dispatch::Dispatch;
 use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache, UserError};
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::module::privilege::ensure_authorized_for_role;
-use crate::util::ClapExt;
+use crate::util::{ClapExt, FlipResultExt};
 
 pub struct RoleModule;
 
@@ -213,38 +213,57 @@ enum UserAction {
     Unassign,
 }
 
-#[derive(Debug, StructOpt)]
-#[structopt(no_version)]
-/// What to do with a role.
-enum Action {
-    /// Makes a role joinable
-    AddJoinable,
-    /// Removes a role from the joinable list.
-    DelJoinable,
-    /// Assign or unassign a role to a user.
-    User {
-        /// The user to assign/unassign a role to.
-        user: String,
-        #[structopt(subcommand)]
-        /// Assign or unassign.
-        action: UserAction,
-    },
-}
-
 #[derive(StructOpt)]
 #[structopt(name = "mod-role", no_version)]
 /// Command to manage roles that users can join on their own.
-struct ModRoleOpt {
-    #[structopt(subcommand)]
-    /// What to do with a role.
-    action: Action,
-    /// The role on which an action will be performed.
-    role: String,
+enum ModRoleOpt {
+    /// Makes a role joinable
+    AddJoinable {
+        role: String,
+    },
+    /// Removes a role from the joinable list.
+    DelJoinable {
+        role: String,
+    },
+    /// Assign or unassign a role to a user.
+    Assign {
+        /// The role on which an action will be performed.
+        role: String,
+        /// The user to assign/unassign a role to.
+        user: String,
+    },
+    Unassign {
+        /// The role on which an action will be performed.
+        role: String,
+        /// The user to assign/unassign a role to.
+        user: String,
+    },
 }
 
 impl ModRoleOpt {
     pub fn extract_role(&self) -> &str {
-        self.role.as_str()
+        match self {
+            ModRoleOpt::AddJoinable { role, .. } => { role.as_str() }
+            ModRoleOpt::DelJoinable { role, .. } => { role.as_str() }
+            ModRoleOpt::Assign { role, .. } => { role.as_str() }
+            ModRoleOpt::Unassign { role, .. } => { role.as_str() }
+        }
+    }
+
+    pub fn extract_user(&self) -> Option<&str> {
+        match self {
+            ModRoleOpt::AddJoinable { .. } |
+            ModRoleOpt::DelJoinable { .. } => { None }
+            ModRoleOpt::Assign { user, .. } => { Some(user.as_ref()) }
+            ModRoleOpt::Unassign { user, .. } => { Some(user.as_ref()) }
+        }
+    }
+
+    pub fn is_assign(&self) -> bool {
+        match self {
+            ModRoleOpt::Assign { .. } => { true }
+            _ => false
+        }
     }
 }
 
@@ -276,19 +295,23 @@ impl Module for ModRoleModule {
 
         let db = DbContext::new(dis.pool(), gid);
         let join = JoinableRoles::new(db);
+        let user = futures::stream::iter(opts.extract_user())
+            .then(|s| VerifiedUser::from_str_with_ctx(s, ctx, gid))
+            .next()
+            .await
+            .flip()?;
 
-        let message = match opts.action {
-            Action::AddJoinable => {
+        match opts {
+            ModRoleOpt::AddJoinable { .. } => {
                 join.add_joinable_role(role).await?;
                 "Set role to joinable."
             }
-            Action::DelJoinable => {
+            ModRoleOpt::DelJoinable { .. } => {
                 join.del_joinable_role(role).await?;
                 "Role is/was no longer joinable."
             }
-            Action::User { user, action } => {
-                let user = VerifiedUser::from_str_with_ctx(&user, ctx, gid)
-                    .await?;
+            _ => {
+                let user = user.unwrap();
                 let mut member = gid.to_guild_cached(ctx)
                     .await
                     .ok_or(GuildNotInCache)?
@@ -296,17 +319,14 @@ impl Module for ModRoleModule {
                     .await
                     .map_err(|_| NoSuchUser)?;
 
-                match action {
-                    UserAction::Assign => {
-                        member.add_role(ctx, role.into_inner())
-                            .await?;
-                        "Added role to user."
-                    }
-                    UserAction::Unassign => {
-                        member.remove_role(ctx, role.into_inner())
-                            .await?;
-                        "Removed role from user if they had it."
-                    }
+                if opts.is_assign() {
+                    member.add_role(ctx, role.into_inner())
+                        .await?;
+                    "Added role to user."
+                } else {
+                    member.remove_role(ctx, role.into_inner())
+                        .await?;
+                    "Removed role from user if they had it."
                 }
             }
         };
