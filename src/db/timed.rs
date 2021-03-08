@@ -1,3 +1,5 @@
+//! Contains types related to processing timed events.
+
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::fmt;
@@ -17,46 +19,65 @@ use crate::dispatch::config::VerifiedRole;
 use crate::dispatch::Dispatch;
 use crate::module::moderation::NoMuteRoleSet;
 
+/// The kind of action to be taken once a timed event is processed.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
 #[non_exhaustive]
 pub enum ActionKind {
+    /// A ban needs to be reversed.
     Ban,
+    /// A user needs to be unmuted.
     Mute,
+    /// Prints a debug message to the logger.
     Debug,
 }
 
 impl ActionKind {
+    /// Converts this kind into its JSON representation.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::to_value(self).expect("Failed to serialize ActionKind")
     }
 }
 
+/// An action to be taken when expiry is reached.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Action {
+    /// When the action should be taken
     expiry: chrono::DateTime<Utc>,
+    /// The user affected by the action.
     target_user: UserId,
+    /// The guild in which this action takes place.
     guild: GuildId,
+    /// The kind of action to take.
     kind: ActionKind,
 }
 
+/// The kind of failure that occurred while processing the action.
 #[derive(Clone, Debug)]
 pub enum FailureKind {
+    /// The target user was not in the guild.
     UserNotInGuild,
+    /// No mute role has been set.
     NoMuteRole,
+    /// Some other unspecified error.
     SysError(String),
 }
 
+/// The error type specifically for timed actions
 #[derive(Clone, Debug)]
 pub struct ActionFailure {
+    /// The action that was being performed when the error occurred.
     action: Action,
+    /// The kind of failure that occurred.
     kind: FailureKind,
 }
 
 impl ActionFailure {
+    /// Creates an `ActionFailure` from an action and a kind of failure.
     pub fn new(action: Action, kind: FailureKind) -> Self {
         ActionFailure { action, kind }
     }
 
+    /// Creates an `ActionFailure` from an action and any bot-compatible error.
     pub fn from_err(action: Action, e: impl Into<crate::error::Error>) -> Self {
         let e = e.into();
         let m = if e.is_user_error() {
@@ -69,6 +90,7 @@ impl ActionFailure {
 }
 
 impl ActionFailure {
+    /// Returns a constant string describing what type of action failed.
     pub const fn failure_message(&self) -> &str {
         match self.action.kind {
             ActionKind::Ban => { "could not unban" }
@@ -77,6 +99,7 @@ impl ActionFailure {
         }
     }
 
+    /// Returns a string describing the failure that occurred.
     pub fn failure_info(&self) -> Cow<str> {
         match &self.kind {
             FailureKind::UserNotInGuild => {
@@ -101,6 +124,7 @@ impl fmt::Display for ActionFailure {
 impl std::error::Error for ActionFailure {}
 
 impl Action {
+    /// Performs the action.
     // TODO: report when this fails into guild log channel
     #[instrument(level = "debug", skip(dis, ctx))]
     pub async fn act(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
@@ -128,6 +152,7 @@ impl Action {
         Ok(())
     }
 
+    /// Unmutes a user in a guild.
     #[instrument(level = "debug", skip(self, dis, db, ctx))]
     async fn do_unmute<'me, 'dis, 'a>(&'me self, dis: &'dis Dispatch, db: DbContext<'dis>, ctx: &'a Context) -> Result<(), ActionFailure> {
         let mute_role = dis.config_value_t::<VerifiedRole>(crate::module::moderation::MUTE_ROLE)
@@ -153,6 +178,7 @@ impl Action {
         Ok(())
     }
 
+    /// Unbans a user in a guild.
     #[instrument(level = "debug", skip(self, ctx))]
     async fn do_unban(&self, ctx: &Context) -> Result<(), ActionFailure> {
         self.guild.unban(ctx, self.target_user)
@@ -163,14 +189,18 @@ impl Action {
 }
 
 impl Action {
+    /// Accessor for the guild id.
     pub fn guild(&self) -> GuildId {
         self.guild
     }
 }
 
+/// A duration representing one minute.
 pub static ONE_MINUTE: Lazy<Duration> = Lazy::new(|| Duration::minutes(1));
+/// A duration representing about one hundred years.
 pub static ONE_HUNDREDISH_YEARS: Lazy<Duration> = Lazy::new(|| Duration::days(365 * 100));
 
+#[doc(hidden)]
 struct Row {
     target_user: i64,
     guild: i64,
@@ -178,12 +208,15 @@ struct Row {
     action: serde_json::Value,
 }
 
+/// A wrapper for a database context for performing actions with timed actions.
 #[derive(Clone)]
 pub struct TimedEvents<'pool> {
+    /// The wrapped database context.
     context: DbContext<'pool>
 }
 
 impl<'pool> TimedEvents<'pool> {
+    /// The maximum number of items which will be pulled per timed event tick.
     pub const BATCH_LIMIT: usize = 1024;
 
     pub fn new(context: DbContext<'pool>) -> Self {

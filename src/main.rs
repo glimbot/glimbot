@@ -7,13 +7,15 @@
 
 //! Main entry point for Glimbot. Additionally controls DB migration.
 
+#![forbid(unsafe_code)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![deny(unused_must_use, missing_docs, missing_crate_level_docs)]
+#![allow(dead_code)]
 #![feature(const_panic)]
 #![feature(try_blocks)]
 #![feature(array_chunks)]
 #![feature(option_insert)]
-#![forbid(unsafe_code)]
-#![deny(unused_must_use)]
-#![allow(dead_code)]
+
 
 #[macro_use] extern crate serde;
 #[macro_use] extern crate shrinkwraprs;
@@ -25,16 +27,16 @@ use jemallocator::Jemalloc;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[macro_use]
-mod error;
+pub mod error;
 #[macro_use]
-mod db;
+pub mod db;
 #[macro_use]
-mod dispatch;
-mod about;
-mod run;
-mod module;
-mod util;
-mod example;
+pub mod dispatch;
+pub mod about;
+pub mod run;
+pub mod module;
+pub mod util;
+pub mod example;
 
 #[cfg(target_env = "gnu")]
 #[global_allocator]
