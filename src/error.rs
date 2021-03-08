@@ -1,3 +1,7 @@
+//! Defines the [`Error`] type for glimbot, wrapping most external error types and marking them
+//! whether or not they should be displayed to the user. This is the preferred error type for glimbot
+//! actions.
+
 use std::borrow::Cow;
 use std::error::Error as StdErr;
 use std::fmt;
@@ -5,16 +9,26 @@ use std::fmt::Formatter;
 use std::ops::Deref;
 use std::result::Result as StdRes;
 
+/// Extension trait for [`Result`] to enable easy logging of errors.
+///
+/// [`Result`]: std::error::Result
 pub trait LogErrorExt {
+    /// If the result contains a user error, logs it at trace level. Otherwise, logs it at error level.
     fn log_error(&self);
 }
 
+/// Wrapper type for errors in glimbot. Errors may be marked as being a user_error; this affects
+/// the level at which they are logged locally and whether or not the user receives
+/// the error's full output or just a generic "error occurred" message.
 pub struct Error {
+    /// The wrapped error.
     err: Box<dyn StdErr + Send>,
+    /// Whether or not this error should be displayed directly to users.
     user_error: bool
 }
 
 impl Error {
+    /// Converts a standard error type into an [`Error`].
     pub fn from_err<T: StdErr + Send + Sized + 'static>(e: T, user_error: bool) -> Self {
         if !user_error {
             error!("{}", &e);
@@ -22,6 +36,7 @@ impl Error {
         Self { err: Box::new(e), user_error }
     }
 
+    /// Returns true if this error should be displayed directly to users.
     pub const fn is_user_error(&self) -> bool {
         self.user_error
     }
@@ -43,14 +58,18 @@ impl fmt::Debug for Error {
 
 impl StdErr for Error {}
 
+/// Simple wrapper for user errors. Deprecated in favor of specific errors from the [`impl_err`] macro.
 #[derive(Debug)]
 pub struct UserError {
+    /// Info string to display to the user.
     info: String
 }
 
 impl UserError {
-    pub fn new(info: impl Into<String>) -> Self {
-        UserError { info: info.into() }
+    /// Creates a user error from the given displayable.
+    #[deprecated]
+    pub fn new(info: impl fmt::Display) -> Self {
+        UserError { info: info.to_string() }
     }
 }
 
@@ -60,14 +79,18 @@ impl fmt::Display for UserError {
     }
 }
 
+/// Wrapper for system-level errors. Deprecated in favor of specific errors from the [`impl_err`] macro.
 #[derive(Debug)]
 pub struct SysError {
+    /// Info string to display in the logs
     info: String
 }
 
 impl SysError {
-    pub fn new(info: impl Into<String>) -> Self {
-        SysError { info: info.into() }
+    /// Creates a sys error from the given displayable.
+    #[deprecated]
+    pub fn new(info: impl fmt::Display) -> Self {
+        SysError { info: info.to_string() }
     }
 }
 
@@ -80,6 +103,7 @@ impl fmt::Display for SysError {
 impl StdErr for SysError {}
 impl StdErr for UserError {}
 
+/// Result type with [`Error`] as the error type.
 pub type Result<T> = StdRes<T, Error>;
 
 impl<T> LogErrorExt for Result<T> {
@@ -94,8 +118,11 @@ impl<T> LogErrorExt for Result<T> {
     }
 }
 
+/// Converts standard result types into bot error types.
 pub trait IntoBotErr<T>: Sized {
+    /// Converts a result into a user error.
     fn into_user_err(self) -> Result<T>;
+    /// Converts a result into a system error.
     fn into_sys_err(self) -> Result<T>;
 }
 
@@ -103,14 +130,9 @@ impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'sta
     fn into_user_err(self) -> Result<T> {
         self.map_err(|e| Error::from_err(e, true))
     }
-
     fn into_sys_err(self) -> Result<T> {
         self.map_err(|e| Error::from_err(e, false))
     }
-}
-
-pub trait SerenityErrExt: Sized {
-    fn into_glim_err(self) -> Error;
 }
 
 impl From<serenity::Error> for Error {
@@ -153,6 +175,7 @@ impl_std_from! {
     sqlx::migrate::MigrateError
 }
 
+/// Implements [`From<Error>`] for a type, with `user_error` set to true
 #[macro_export]
 macro_rules! impl_user_err_from {
     ($($src:path),+) => {
@@ -170,9 +193,11 @@ impl_user_err_from! {
     UserError
 }
 
+/// Implements [`From<Error>`] for a type, with `user_error` set to false
 #[macro_export]
 macro_rules! impl_err {
     ($name:ident, $message:expr, $user_error:expr) => {
+        #[doc = $message]
         #[derive(Debug)]
         pub struct $name;
 
@@ -197,11 +222,17 @@ impl_err!(RoleNotInCache, "Couldn't find role in cache.", false);
 impl_err!(InsufficientPermissions, "You do not have the permissions to run this command.", true);
 impl_err!(DeputyConfused, "Your role is not high enough in the hierarchy to do that.", true);
 
+/// Extension trait for [`sqlx::Error`]
 pub trait DatabaseError {
+    /// Returns the name of the constraint violated if this was a constraint issue.
     fn constraint(&self) -> Option<&str>;
+    /// Returns whether or not this error is a constraint violation.
     fn is_constraint(&self) -> bool;
+    /// Returns whether or not this error is a `UNIQUE` constraint violation.
     fn is_unique(&self) -> bool;
+    /// Returns whether or not this error is a `CHECK` constraint violation.
     fn is_check(&self) -> bool;
+    /// Returns the several digit string representing what error occurred
     fn sqlstate(&self) -> Option<Cow<'_, str>>;
 }
 

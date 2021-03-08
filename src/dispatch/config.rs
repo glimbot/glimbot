@@ -14,55 +14,74 @@ use serenity::model::misc::Mentionable;
 
 use crate::db::DbContext;
 use crate::error::{GuildNotInCache, IntoBotErr, SysError, UserError};
+use serenity::model::error::Error::GuildNotFound;
 
+/// A trait specifying that a type can be set as a value.
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
 
+/// Represents a config value, allowing for enforcement of type issues.
 #[derive(Debug)]
 pub struct Value<T>
     where T: ValueType {
+    /// The name of the config value.
     name: &'static str,
+    /// An about description for the config value.
     help: &'static str,
+    /// A default value which can be used if `T: Clone` to set an unset config value.
     default: Option<T>,
 }
 
 impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display> ValueType for T {}
 
+impl_err!(NoDefaultSpecified, "No default is specified for that value.", true);
+
 impl<T> Value<T> where T: ValueType {
+    /// Creates a value with the given name and help, without support for get_or_default.
     pub fn new(name: &'static str, help: &'static str) -> Self {
         Value { name, help, default: None }
     }
 
-    pub fn with_default(name: &'static str, help: &'static str, default: T) -> Self {
+    /// Creates a value with the given name and help, and with the specified default.
+    pub fn with_default(name: &'static str, help: &'static str, default: T) -> Self where T: Clone {
         let mut out = Self::new(name, help);
         out.default = Some(default);
         out
     }
 
+    /// Retrieves the value associated with this value's name, setting it atomically if it doesn't
+    /// exist.
     pub async fn get_or_insert(&self, ctx: &DbContext<'_>, value: T) -> crate::error::Result<T> {
         ctx.get_or_insert(self.name, value).await
     }
 
+    /// Retrieves the value associated with this value's name, setting it atomically if it doesn't
+    /// exist using the default specified when this value was constructed.
     pub async fn get_or_default(&self, ctx: &DbContext<'_>) -> crate::error::Result<T> where T: Clone {
         if self.default.is_none() {
-            return Err(UserError::new(format!("No default specified for {}", self.name)).into());
+            return Err(NoDefaultSpecified.into());
         }
 
         ctx.get_or_insert(self.name, self.default.clone().unwrap()).await
     }
 
+    /// Retrieves the value associated with this value's name, returning `None` if hasn't been set.
     pub async fn get(&self, ctx: &DbContext<'_>) -> crate::error::Result<Option<T>> {
         ctx.get(self.name).await
     }
 
+    /// Sets the value associated with this value's name.
     pub async fn set(&self, ctx: &DbContext<'_>, value: T) -> crate::error::Result<()> {
         ctx.insert(self.name, value).await
     }
 }
 
+/// Trait for converting arbitrary types from strings into values
+/// with the added context of a context and the relevant guild.
 #[async_trait::async_trait]
 pub trait FromStrWithCtx: Sized {
+    /// The associated error type for the conversion.
     type Err: std::error::Error + Send + Sized + 'static;
-
+    /// Converts a string into an object as mentioned above.
     async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err>;
 }
 
@@ -75,6 +94,8 @@ impl<T> FromStrWithCtx for T where T: FromStr, T::Err: std::error::Error + Send 
     }
 }
 
+/// Marks a value as not being able to be set by users.
+#[deprecated]
 #[macro_export]
 macro_rules! impl_not_user_settable {
     ($t:path) => {
@@ -89,12 +110,16 @@ macro_rules! impl_not_user_settable {
     };
 }
 
-
+/// A trait meant to be specified by validators of config values.
 #[async_trait::async_trait]
 pub trait Validator: Send + Sync + Any + DowncastSync + 'static {
+    /// Retrieves the name associated with a config value.
     fn name(&self) -> &'static str;
+    /// Retrieves the help string associated with a config value.
     fn help(&self) -> &'static str;
+    /// Converts a string into a [`serde_json::Value`].
     async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<serde_json::Value>;
+    /// Converts a JSON representation of the associated type into a string.
     fn display_value(&self, v: serde_json::Value) -> crate::error::Result<String>;
 }
 impl_downcast!(sync Validator);
@@ -120,34 +145,33 @@ impl<T> Validator for Value<T> where T: ValueType {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct VerifiedRole(u64);
+// TODO: Make this a shrinkwrap
+/// A role which has been verified to exist in a guild.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
+pub struct VerifiedRole(RoleId);
 
 impl VerifiedRole {
+    /// Extracts the inner `RoleId`.
     pub fn into_inner(self) -> RoleId {
         self.0.into()
     }
+    /// Converts the internal value into an i64, mostly for use with SQL DBs.
     pub fn to_i64(&self) -> i64 {
-        self.0 as i64
+        self.0.0 as i64
     }
-
+    /// Converts the internal value into its big-endian representation.
     pub fn into_be_bytes(self) -> [u8; 8] {
-        self.0.to_be_bytes()
-    }
-
-    pub async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
-        let rid = self.into_inner();
-        rid.to_role_name(ctx, guild).await
-    }
-
-    pub async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
-        self.into_inner().to_role_name_or_id(ctx, guild).await
+        self.0.0.to_be_bytes()
     }
 }
 
+/// Extension trait to convert RoleId into the relevant bits.
 #[async_trait::async_trait]
 pub trait RoleExt {
+    /// Given a context, converts this role into the name in a guild.
+    // TODO: replace with `context_safe`
     async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String>;
+    /// Converts this role into the name in a guild, or just the id if it can't be determined.
     async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String;
 }
 
@@ -169,6 +193,8 @@ impl RoleExt for RoleId {
     }
 }
 
+impl_err!(NoSuchRole, "There is no such role in this guild.", true);
+
 #[async_trait::async_trait]
 impl FromStrWithCtx for VerifiedRole {
     type Err = crate::error::Error;
@@ -181,9 +207,9 @@ impl FromStrWithCtx for VerifiedRole {
             guild_info.roles.get(&id)
         } else {
             guild_info.role_by_name(s)
-        }.ok_or_else(|| UserError::new(format!("No such role in this guild: {}", s)))?;
+        }.ok_or(NoSuchRole)?;
 
-        Ok(Self(role_id.id.0))
+        Ok(Self(role_id.id))
     }
 }
 
@@ -193,7 +219,8 @@ impl fmt::Display for VerifiedRole {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+/// A wrapper around a channel known to exist in a guild.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
 pub struct VerifiedChannel(ChannelId);
 
 #[async_trait::async_trait]
@@ -220,20 +247,25 @@ impl fmt::Display for VerifiedChannel {
     }
 }
 
+impl_err!(NoSuchChannel, "No such channel in this guild.", true);
+
 impl VerifiedChannel {
+    /// Converts this value into its internal representation.
     pub fn into_inner(self) -> ChannelId {
         self.0
     }
 
+    /// Converts this channel into the text name, returning an error if it can't.
     pub async fn to_channel_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let cid = self.into_inner();
         let g = guild.to_guild_cached(ctx).await
-            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+            .ok_or(GuildNotInCache)?;
         let role = g.channels.get(&cid)
-            .ok_or_else(|| UserError::new(format!("No such channel in this guild: {}", &self)))?;
+            .ok_or(NoSuchChannel)?;
         Ok(role.name.clone())
     }
 
+    /// Converts this channel into the text name, returning the raw id if it can't.
     pub async fn to_channel_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
         self.to_channel_name(ctx, guild)
             .await
@@ -241,23 +273,27 @@ impl VerifiedChannel {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+/// A wrapper around a user id guaranteed to exist in a guild.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
 pub struct VerifiedUser(UserId);
 
 impl VerifiedUser {
+    /// Converts this value into its internal representation.
     pub fn into_inner(self) -> UserId {
         self.0
     }
 
+    /// Converts this user into the text name.
     pub async fn to_user_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let uid = self.into_inner();
         let g = guild.to_guild_cached(ctx).await
-            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
+            .ok_or(GuildNotInCache)?;
         let member = g.members.get(&uid)
-            .ok_or_else(|| UserError::new(format!("No such user in this guild: {}", &self)))?;
+            .ok_or(NoSuchUser)?;
         Ok(member.nick.clone().unwrap_or_else(|| member.user.name.clone()))
     }
 
+    /// Converts this user into the text name, or the raw id if it can't.
     pub async fn to_user_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
         self.to_user_name(ctx, guild)
             .await
