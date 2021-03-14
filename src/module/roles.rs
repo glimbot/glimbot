@@ -1,3 +1,5 @@
+//! Contains logic related to joining/assigning/leaving/unassigning roles.
+
 use std::borrow::Borrow;
 
 use futures::StreamExt;
@@ -5,6 +7,7 @@ use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
 use serenity::model::prelude::RoleId;
+use serenity::utils::MessageBuilder;
 use shrinkwraprs::Shrinkwrap;
 use structopt::StructOpt;
 
@@ -12,14 +15,13 @@ use crate::db::DbContext;
 use crate::dispatch::config::{FromStrWithCtx, NoSuchUser, RoleExt, VerifiedUser};
 use crate::dispatch::config::VerifiedRole;
 use crate::dispatch::Dispatch;
-use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache, UserError};
+use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache};
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::module::privilege::ensure_authorized_for_role;
 use crate::util::{ClapExt, FlipResultExt};
 
+/// Adds `role` and `mod_role` command.
 pub struct RoleModule;
-
-pub const JOINABLE_ROLES_KEY: &str = "joinable_roles";
 
 /// Command to join joinable roles. Use list-joinable to join a role.
 #[derive(StructOpt)]
@@ -27,18 +29,22 @@ pub const JOINABLE_ROLES_KEY: &str = "joinable_roles";
 pub enum RoleOpt {
     /// Joins a joinable role.
     Join {
+        /// The role to join.
         role: String
     },
     /// Leaves a joinable role.
     Leave {
+        /// The role to leave.
         role: String
     },
     /// Lists all joinable roles.
     ListJoinable,
 }
 
+/// Wrapper around DbContext to retrieve/set joinable roles.
 #[derive(Shrinkwrap)]
 pub struct JoinableRoles<'pool> {
+    #[doc(hidden)]
     ctx: DbContext<'pool>
 }
 
@@ -46,10 +52,13 @@ impl_err!(TooManyRoles, "Can't add more roles to joinable; you have too many!", 
 impl_err!(AlreadyJoinable, "This role is already joinable.", true);
 
 impl<'pool> JoinableRoles<'pool> {
+    /// Creates a wrapper around the database context.
     pub fn new(ctx: impl Borrow<DbContext<'pool>>) -> Self {
         JoinableRoles { ctx: ctx.borrow().clone() }
     }
 
+    /// Inserts a new joinable role into the database.
+    /// This will error if the guild has too many roles or if the role is already joinable.
     pub async fn add_joinable_role(&self, role: VerifiedRole) -> crate::error::Result<()> {
         let res: Result<_, sqlx::Error> = sqlx::query!(
             "INSERT INTO joinable_roles (guild, role) VALUES ($1, $2);",
@@ -72,6 +81,7 @@ impl<'pool> JoinableRoles<'pool> {
         }
     }
 
+    /// Removes a role from the joinable list.
     pub async fn del_joinable_role(&self, role: VerifiedRole) -> crate::error::Result<()> {
         sqlx::query!(
             "DELETE FROM joinable_roles WHERE guild = $1 AND role = $2;",
@@ -83,30 +93,21 @@ impl<'pool> JoinableRoles<'pool> {
         Ok(())
     }
 
+    /// Returns whether or not the role is in the joinable roles list.
     pub async fn is_joinable(&self, role: VerifiedRole) -> crate::error::Result<bool> {
-        #[derive(Debug)]
-        struct Row {
-            matching: Option<i64>
-        }
-
-        Ok(sqlx::query_as!(
-                    Row,
+        Ok(sqlx::query_scalar!(
                     "SELECT COUNT(*) AS matching FROM joinable_roles WHERE guild = $1 AND role = $2;",
                     self.ctx.guild_as_i64(),
                     role.to_i64()
                 ).fetch_one(self.ctx.conn())
             .await?
-            .matching
             .unwrap_or_default() > 0)
     }
 
+    /// Retrieves the list of joinable roles. Keeping this query sane is why
+    /// we limit the number of joinable roles.
     pub async fn joinable_roles(&self) -> crate::error::Result<Vec<RoleId>> {
-        #[derive(Debug)]
-        struct Row {
-            role: i64
-        }
-        let s: Vec<Row> = sqlx::query_as!(
-            Row,
+        let s: Vec<i64> = sqlx::query_scalar!(
             "SELECT role FROM joinable_roles WHERE guild = $1 ORDER BY role ASC;",
             self.ctx.guild_as_i64()
         ).fetch_all(self.ctx.conn())
@@ -114,15 +115,18 @@ impl<'pool> JoinableRoles<'pool> {
         let mut out = Vec::with_capacity(s.len());
         out.extend(
             s.into_iter()
-                .map(|r| RoleId::from(r.role as u64))
+                .map(|r| RoleId::from(r as u64))
         );
         Ok(out)
     }
 }
 
+impl_err!(RoleNotSelfAssignable, "Role is not self-assignable/removable.", true);
+
 #[async_trait::async_trait]
 impl Module for RoleModule {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("role")
             .with_sensitivity(Sensitivity::Low)
             .with_filter(false)
@@ -137,7 +141,7 @@ impl Module for RoleModule {
         let db = DbContext::new(dis.pool(), gid);
         let join = JoinableRoles::new(db);
 
-        let message = match &role_opts {
+        match &role_opts {
             RoleOpt::Join { .. } |
             RoleOpt::Leave { .. } => {
                 let role = match &role_opts {
@@ -161,7 +165,7 @@ impl Module for RoleModule {
                 let is_joinable = join.is_joinable(vrole).await?;
 
                 if !is_joinable {
-                    return Err(UserError::new(format!("{} is not user-addable/removable.", vrole.to_role_name_or_id(ctx, gid).await)).into());
+                    return Err(RoleNotSelfAssignable.into());
                 }
 
                 let guild = gid.to_guild_cached(ctx)
@@ -173,11 +177,9 @@ impl Module for RoleModule {
                 match &role_opts {
                     RoleOpt::Join { .. } => {
                         mem.add_role(ctx, vrole.into_inner()).await?;
-                        "Added role.".to_string()
                     }
                     _ => {
                         mem.remove_role(ctx, vrole.into_inner()).await?;
-                        "Removed role.".to_string()
                     }
                 }
             }
@@ -189,11 +191,17 @@ impl Module for RoleModule {
                     .collect()
                     .await;
 
-                if roles.is_empty() {
+                let message = if roles.is_empty() {
                     "No joinable roles.".to_string()
                 } else {
                     roles.join(", ")
-                }
+                };
+
+                let msg = MessageBuilder::new()
+                    .push_codeblock_safe(message, None)
+                    .build();
+                orig.reply(ctx, msg).await?;
+                return Ok(());
             }
         };
 
@@ -202,8 +210,10 @@ impl Module for RoleModule {
     }
 }
 
+/// Represents the `mod-role` command.
 pub struct ModRoleModule;
 
+/// Represents whether a user should be assigned or unassigned a role.
 #[derive(Debug, StructOpt)]
 #[structopt(no_version)]
 enum UserAction {
@@ -217,21 +227,24 @@ enum UserAction {
 #[structopt(name = "mod-role", no_version)]
 /// Command to manage roles that users can join on their own.
 enum ModRoleOpt {
-    /// Makes a role joinable
+    /// Makes a role joinable.
     AddJoinable {
+        /// The role to make joinable.
         role: String,
     },
     /// Removes a role from the joinable list.
     DelJoinable {
+        /// The role to remove from being joinable.
         role: String,
     },
-    /// Assign or unassign a role to a user.
+    /// Assign a role to a user.
     Assign {
         /// The role on which an action will be performed.
         role: String,
         /// The user to assign/unassign a role to.
         user: String,
     },
+    /// Unassign a role to a user.
     Unassign {
         /// The role on which an action will be performed.
         role: String,
@@ -241,6 +254,7 @@ enum ModRoleOpt {
 }
 
 impl ModRoleOpt {
+    /// Extracts the role string from the arguments
     pub fn extract_role(&self) -> &str {
         match self {
             ModRoleOpt::AddJoinable { role, .. } => { role.as_str() }
@@ -250,6 +264,7 @@ impl ModRoleOpt {
         }
     }
 
+    /// Extracts the user string from the arguments
     pub fn extract_user(&self) -> Option<&str> {
         match self {
             ModRoleOpt::AddJoinable { .. } |
@@ -259,6 +274,7 @@ impl ModRoleOpt {
         }
     }
 
+    /// Returns true if this is an assign variant.
     pub fn is_assign(&self) -> bool {
         match self {
             ModRoleOpt::Assign { .. } => { true }
@@ -270,6 +286,7 @@ impl ModRoleOpt {
 #[async_trait::async_trait]
 impl Module for ModRoleModule {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
             ModInfo::with_name("mod-role")
                 .with_command(true)

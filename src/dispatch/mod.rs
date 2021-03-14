@@ -1,4 +1,7 @@
+//! Contains the code related to dispatching glimbot actions, reacting to messages, etc.
+
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::sync::{Arc, Weak};
@@ -9,7 +12,7 @@ use futures::stream;
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use linked_hash_map::LinkedHashMap;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serenity::client::{Context, EventHandler};
@@ -31,27 +34,38 @@ use crate::module::Module;
 
 pub mod config;
 
+/// The primary dispatch state holder. Contains information on the various modules
+/// and filters installed in Glimbot.
 pub struct Dispatch {
+    /// The bot owner.
     owner: UserId,
+    /// Filters which are applied to each message.
     filters: Vec<Arc<dyn Module>>,
+    /// Modules containing some combination of commands and filters.
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
-    config_values: LinkedHashMap<&'static str, Arc<dyn config::Validator>>,
+    /// Config value validators for the configuration values set in each guild.
+    config_values: BTreeMap<&'static str, Arc<dyn config::Validator>>,
+    /// Database connection pool.
     pool: PgPool,
+    /// The background service, initialized on first start.
     background_service: OnceCell<Arc<BackgroundService>>,
 }
 
 impl Dispatch {
+    /// Gets a reference to the DB pool.
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 }
 
 impl Dispatch {
-    pub fn config_values(&self) -> &LinkedHashMap<&'static str, Arc<dyn config::Validator>> {
+    /// Retrieves a reference to the map mapping config values to
+    pub fn config_values(&self) -> &BTreeMap<&'static str, Arc<dyn config::Validator>> {
         &self.config_values
     }
 }
 
+/// TypeId key for accessing the shard manager.
 pub struct ShardManKey;
 
 impl TypeMapKey for ShardManKey {
@@ -59,20 +73,25 @@ impl TypeMapKey for ShardManKey {
 }
 
 impl Dispatch {
+    /// Get the owner of this instance of Glimbot.
     pub fn owner(&self) -> UserId {
         self.owner
     }
+    /// Convenience function for constructing a DbContext with the pool in this Dispatch.
     pub fn db(&self, gid: GuildId) -> DbContext {
         DbContext::new(self.pool(), gid)
     }
 }
 
+/// Error returned if a specified command doesn't exist.
 #[derive(Debug)]
 pub struct NoSuchCommand {
+    #[doc(hidden)]
     cmd: Cow<'static, str>
 }
 
 impl NoSuchCommand {
+    /// Creates a new NoSuchCommand.
     pub fn new(cmd: impl Into<Cow<'static, str>>) -> Self {
         NoSuchCommand { cmd: cmd.into() }
     }
@@ -86,8 +105,12 @@ impl fmt::Display for NoSuchCommand {
 
 impl std::error::Error for NoSuchCommand {}
 impl_user_err_from!(NoSuchCommand);
+impl_err!(NoDMs, "Glimbot is not designed to respond to DMs.", true);
+impl_err!(ExpectedString, "Expected at least once string to appear in the command.", false);
+
 
 impl Dispatch {
+    /// Creates an empty dispatch with the given pool and owner.
     pub fn new(owner: UserId, pool: PgPool) -> Self {
         Self {
             owner,
@@ -99,6 +122,7 @@ impl Dispatch {
         }
     }
 
+    /// Adds a module to this dispatch instance.
     pub fn add_module<T: Module + 'static>(&mut self, module: T) {
         let a = Arc::new(module);
         let inf = a.info();
@@ -122,35 +146,43 @@ impl Dispatch {
         self.modules.insert(inf.name, a);
     }
 
+    /// Retrieves a module by name.
     pub fn module(&self, name: &str) -> Option<&dyn Module> {
         self.modules.get(name).map(|r| r.as_ref())
     }
 
+    /// Retrieves a module, returning an error if the specified module isn't a command module.
     pub fn command_module(&self, cmd: &str) -> Result<&dyn Module, NoSuchCommand> {
         self.module(cmd)
             .filter(|s| s.info().command)
             .ok_or_else(|| NoSuchCommand::new(cmd.to_string()))
     }
 
+    /// Retrieves a validator reference by name.
     pub fn config_value(&self, name: &str) -> crate::error::Result<&dyn config::Validator> {
+
         self.config_values.get(name).map(|o| o.as_ref())
-            .ok_or_else(|| UserError::new(format!("No such config value: {}", name)).into())
+            .ok_or_else(|| #[allow(deprecated)] UserError::new(format!("No such config value: {}", name)).into())
     }
 
+    /// Retrieves a validator reference by name, downcasting it to a specified type.
     pub fn config_value_t<T: ValueType>(&self, name: &str) -> crate::error::Result<&config::Value<T>>
         where T::Err: std::error::Error + Send + Sized + 'static {
         let v = self.config_value(name)?;
         let out = v.as_any().downcast_ref()
-            .ok_or_else(|| SysError::new(format!("Incorrect type downcast for config value {}", name)))?;
+            .ok_or_else(|| #[allow(deprecated)] SysError::new(format!("Incorrect type downcast for config value {}", name)))?;
         Ok(out)
     }
 
+    /// The primary entry point for glimbot message handling. Messages that start with a command prefix are interpreted
+    /// as commands and have filters and such applied to them.
     pub async fn handle_message(&self, ctx: &Context, new_message: &Message) -> crate::error::Result<()> {
         let contents = &new_message.content;
+        // This allows us to assume we're in a guild everywhere down the line.
         let guild = if let Some(id) = new_message.guild_id {
             id
         } else {
-            return Err(UserError::new("Glimbot is not designed to respond to DMs.").into());
+            return Err(NoDMs.into());
         };
         tracing::Span::current().record("g", &guild.0);
         if new_message.author.id == ctx.cache.current_user_id().await {
@@ -179,7 +211,7 @@ impl Dispatch {
         let cmd_raw = &contents[first_bit.len_utf8()..];
         let cmd_name = cmd_raw.split_whitespace()
             .next()
-            .ok_or_else(|| SysError::new("Expected at least one string to appear in the command."))?;
+            .ok_or(ExpectedString)?;
 
 
         let cmd = stream::iter(self.filters.iter())
@@ -192,6 +224,7 @@ impl Dispatch {
         let mut command = if let Some(c) = shlex::split(cmd_raw) {
             c
         } else {
+            #[allow(deprecated)]
             return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
         };
         command[0] = cmd;
@@ -239,7 +272,7 @@ impl EventHandler for Dispatch {
     }
 }
 
-
+/// Thin wrapper around Dispatch to allow sharing it with the background service.
 #[derive(Shrinkwrap, Clone)]
 pub struct ArcDispatch(Arc<Dispatch>);
 
@@ -249,26 +282,38 @@ impl From<Dispatch> for ArcDispatch {
     }
 }
 
+/// Represents the background service. It's self cancelling; when Dispatch is dropped,
+/// this service will stop itself after the next tick.
 struct BackgroundService {
+    /// Reference to the original dispatch. We use weak to avoid a reference cycle.
+    /// Also makes the background service self cancelling.
     dispatch: Weak<Dispatch>,
+    /// Context for interacting with Discord.
     ctx: Context,
+    /// Set on first start.
     started: AtomicBool,
 }
 
 impl BackgroundService {
+    /// Starts the background service if it hasn't already started.
     pub async fn start(&self) {
+        // fetch_or returns the previously stored value; if it's false, we
+        // weren't the first to try starting the service.
         if self.started.fetch_or(true, Ordering::AcqRel) {
             return;
         }
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15));
+        interval.tick().await; // Avoid waiting while we're holding the pointer to Dispatch.
 
         while let Some(d) = self.dispatch.upgrade() {
-            interval.tick().await;
             self.process_events(&d).await.log_error();
+            std::mem::drop(d); // Manually drop to avoid holding while we wait.
+            interval.tick().await;
         }
     }
 
+    /// Processes timed events from the database.
     #[instrument(level = "info", skip(self, dis))]
     pub async fn process_events(&self, dis: &Dispatch) -> crate::error::Result<()> {
         let mut batch = TimedEvents::get_actions_before(dis.pool(),
@@ -278,7 +323,7 @@ impl BackgroundService {
         // Avoid a long sequence of the same guild from bulk actions
         batch.shuffle(&mut thread_rng());
 
-        if batch.len() > 0 {
+        if !batch.is_empty() {
             debug!("got {} events", batch.len());
         }
 

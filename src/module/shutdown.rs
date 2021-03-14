@@ -1,3 +1,5 @@
+//! Contains the `shutdown` command, an owner-only command to shutdown Glimbot.
+
 use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
@@ -5,11 +7,13 @@ use serenity::model::channel::Message;
 use crate::dispatch::{Dispatch, ShardManKey};
 use crate::module::{ModInfo, Module, Sensitivity};
 
+/// Owner-only command to shutdown Glimbot by terminating the shards.
 pub struct Shutdown;
 
 #[async_trait::async_trait]
 impl Module for Shutdown {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
             ModInfo::with_name("shutdown")
                 .with_sensitivity(Sensitivity::Owner)

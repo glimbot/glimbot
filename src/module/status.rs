@@ -1,3 +1,5 @@
+//! Contains module for retrieving glimbot performance statistics.
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -11,6 +13,7 @@ use crate::about::REPO_URL;
 use crate::dispatch::{Dispatch, ShardManKey};
 use crate::module::{ModInfo, Module, Sensitivity};
 
+#[doc(hidden)]
 static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
     ModInfo {
         name: "bot-status",
@@ -21,14 +24,19 @@ static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
     }
 });
 
+/// Number of bytes in a Mebibyte
 pub const BYTES_IN_MIB: u64 = 1024 * 1024;
 
+/// The module for the `bot-status` command.
 #[derive(Default)]
 pub struct StatusModule {
+    /// Tracks the number of valid commands processed by glimbot.
     command_counter: AtomicU64
 }
 
+/// Tracks when the dispatch was started.
 pub static START_TIME: Lazy<Instant> = Lazy::new(Instant::now);
+/// Glimbot's main purple.
 pub const GLIM_COLOR: Color = Color::new(0xEDBBF3);
 
 #[async_trait::async_trait]

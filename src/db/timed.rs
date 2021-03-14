@@ -1,18 +1,15 @@
 //! Contains types related to processing timed events.
 
 use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::Formatter;
 
 use chrono::Duration;
 use chrono::Utc;
-use futures::{Stream, TryStreamExt};
 use once_cell::sync::Lazy;
 use serenity::model::id::{GuildId, UserId};
-use serenity::prelude::{Context, Mentionable};
-use serenity::utils::content_safe;
+use serenity::prelude::Context;
 use sqlx::PgPool;
-use sqlx::query::QueryAs;
 
 use crate::db::DbContext;
 use crate::dispatch::config::VerifiedRole;
@@ -219,10 +216,12 @@ impl<'pool> TimedEvents<'pool> {
     /// The maximum number of items which will be pulled per timed event tick.
     pub const BATCH_LIMIT: usize = 1024;
 
+    /// Wraps a database context to do timed event actions.
     pub fn new(context: DbContext<'pool>) -> Self {
         TimedEvents { context }
     }
 
+    /// Stores an action in the database.
     pub async fn store_action(&self, action: &Action) -> crate::error::Result<()> {
         sqlx::query!(
             r#"
@@ -237,6 +236,7 @@ impl<'pool> TimedEvents<'pool> {
         Ok(())
     }
 
+    /// Deletes an action from the database.
     pub async fn drop_action(&self, action: &Action) -> crate::error::Result<()> {
         sqlx::query!(
             r#"
@@ -254,12 +254,13 @@ impl<'pool> TimedEvents<'pool> {
         Ok(())
     }
 
+    /// Retrieves the actions before the specified epoch, limited by `BATCH_LIMIT`.
     pub async fn get_actions_before(pool: &PgPool, epoch: chrono::DateTime<Utc>) -> crate::error::Result<Vec<Action>> {
 
         let q: sqlx::query::Map<_, _, _> = sqlx::query_as!(
             Row,
             r#"
-            SELECT * FROM timed_events WHERE expiry <= $1 LIMIT $2;
+            SELECT * FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;
             "#,
             epoch,
             Self::BATCH_LIMIT as i64
@@ -279,6 +280,7 @@ impl<'pool> TimedEvents<'pool> {
 
 
 impl Action {
+    /// Creates an action.
     pub fn new(user: UserId, guild: GuildId, action: ActionKind, expiry: impl Into<chrono::DateTime<Utc>>) -> Self {
         Self {
             expiry: expiry.into(),
@@ -288,6 +290,7 @@ impl Action {
         }
     }
 
+    /// Creates an action, setting the expiry to `now()` + the duration.
     pub fn with_duration(user: UserId, guild: GuildId, action: ActionKind, duration: impl Into<chrono::Duration>) -> Self {
         let expiry = chrono::DateTime::<Utc>::from(chrono::Local::now()).checked_add_signed(duration.into().clamp(*ONE_MINUTE, *ONE_HUNDREDISH_YEARS)).unwrap();
         Self::new(
@@ -298,18 +301,22 @@ impl Action {
         )
     }
 
+    /// Creates an action to remove a ban from a user.
     pub fn unban(user: UserId, guild: GuildId, duration: impl Into<chrono::Duration>) -> Self {
         Self::with_duration(user, guild, ActionKind::Ban, duration)
     }
 
+    /// Creates an action to remove a mute role from a user.
     pub fn unmute(user: UserId, guild: GuildId, duration: impl Into<chrono::Duration>) -> Self {
         Self::with_duration(user, guild, ActionKind::Mute, duration)
     }
 
+    /// Creates an action to print a debug message.
     pub fn debug(duration: impl Into<chrono::Duration>) -> Self {
         Self::with_duration(Default::default(), Default::default(), ActionKind::Debug, duration)
     }
 
+    /// Stores an action in the database.
     pub async fn store_action(&self, dis: &Dispatch) -> crate::error::Result<()> {
         let db = dis.db(self.guild);
         let t = TimedEvents::new(db);
