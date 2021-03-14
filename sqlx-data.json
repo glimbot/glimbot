@@ -132,8 +132,8 @@
       ]
     }
   },
-  "c51c3a4dde0e93eca2acb1a9c6c91f08ef8a7d2f72c82b143e1e18d0cf3018ca": {
-    "query": "\n            SELECT * FROM timed_events WHERE expiry <= $1 LIMIT $2;\n            ",
+  "cd4e221980e2d1798acf6fdde719dccecb49cbd6855a5f7154d9487a7f374726": {
+    "query": "\n            SELECT * FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;\n            ",
     "describe": {
       "columns": [
         {
