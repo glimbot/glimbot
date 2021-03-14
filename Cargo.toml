@@ -54,7 +54,7 @@ shrinkwraprs = "0.3"
 smallvec = "1.6"
 sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "json", "offline"]}
 rand = "0.8"
-zerocopy = "0.3"
+zerocopy = "0.4"
 
 [dependencies.serenity]
 version = "0.10"
