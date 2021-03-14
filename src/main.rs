@@ -14,7 +14,7 @@
 #![feature(const_panic)]
 #![feature(try_blocks)]
 #![feature(array_chunks)]
-#![feature(option_insert)]
+#![feature(option_insert, stmt_expr_attributes)]
 
 
 #[macro_use] extern crate serde;
@@ -38,6 +38,7 @@ pub mod module;
 pub mod util;
 pub mod example;
 
+#[doc(hidden)]
 #[cfg(target_env = "gnu")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;

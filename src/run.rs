@@ -1,9 +1,12 @@
+//! Contains code to get glimbot dispatch and background service started.
+
 use serenity::client::bridge::gateway::GatewayIntents;
 
 use crate::dispatch::{ArcDispatch, ShardManKey};
 use crate::module::status::START_TIME;
 
-// Starts Glimbot.
+/// Starts Glimbot.
+/// This is where modules are loaded.
 pub async fn start_bot() -> crate::error::Result<()> {
 
     let pool = crate::db::create_pool().await?;
@@ -31,6 +34,7 @@ pub async fn start_bot() -> crate::error::Result<()> {
 
     let smc = shard_man.clone();
     tokio::spawn(async move {
+        // Gracefully handle shutting down due to interrupt.
         tokio::signal::ctrl_c().await.expect("failed to listen for Ctrl + C");
         smc.lock().await.shutdown_all().await;
     });

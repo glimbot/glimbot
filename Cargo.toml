@@ -12,7 +12,7 @@ authors = ["Nick Samson <me@nicksamson.com>"]
 edition = "2018"
 license = "MPL-2.0"
 readme = "README.md"
-repository = "https://github.com/nes77/glimbot"
+repository = "https://github.com/glimbot/glimbot"
 description = "A Discord anti-spam and admin bot."
 exclude = [".env"]
 

@@ -1,3 +1,6 @@
+//! Contains abstractions over the persistent store connections for glimbot.
+//! Currently, glimbot relies on a PostgreSQL server for its persistent store.
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
@@ -20,7 +23,9 @@ use crate::util::FlipResultExt;
 
 pub mod timed;
 
+/// Gets the path to the default data folder.
 pub fn default_data_folder() -> PathBuf {
+    #[doc(hidden)]
     static DEFAULT_PATH: Lazy<PathBuf> = Lazy::new(|| {
         let mut base = dirs::data_local_dir().unwrap();
         base.push("glimbot");
@@ -30,6 +35,7 @@ pub fn default_data_folder() -> PathBuf {
     DEFAULT_PATH.clone()
 }
 
+/// Gets the path to the default data folder, creating it if necessary.
 pub fn ensure_data_folder() -> io::Result<PathBuf> {
     let dir = std::env::var("GLIMBOT_DIR")
         .map(|s| shellexpand::full(&s).expect("Failed while expanding directory").to_string())
@@ -40,8 +46,11 @@ pub fn ensure_data_folder() -> io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// The SQL migrations to be automatically applied on startup.
 static MIGRATIONS: Migrator = sqlx::migrate!();
 
+/// Create the database connection pool. This will eagerly spawn a single connection,
+/// and spawn more as contention occurs.
 pub async fn create_pool() -> crate::error::Result<PgPool> {
     let db_url = std::env::var("DATABASE_URL")?;
 
@@ -55,46 +64,66 @@ pub async fn create_pool() -> crate::error::Result<PgPool> {
     Ok(pool)
 }
 
+/// A thin wrapper around a DB pool and the guild which queries should target.
 #[derive(Clone)]
 pub struct DbContext<'pool> {
+    /// The guild that queries will target.
     guild: GuildId,
+    /// A reference to the connection pool. We don't take a connection because we can usually
+    /// significantly reduce contention on the connections by only holding one for the duration
+    /// of the query.
     conn: &'pool PgPool,
 }
 
 impl DbContext<'_> {
+    /// Gets the guild this context refers to.
     pub fn guild(&self) -> GuildId {
         self.guild
     }
 
+    /// Gets the guild this context refers to as an i64.
     pub fn guild_as_i64(&self) -> i64 {
         self.guild.0 as i64
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug)]
 struct ConfigRow {
     value: serde_json::Value
 }
 
+/// An arc containing a read-write locked type.
 pub type Arctex<T> = Arc<RwLock<T>>;
+/// An arctex containing a hashmap.
 pub type ArctexMap<K, V> = Arctex<HashMap<K, V>>;
+/// The value of a cache member.
 pub type CacheValue = Arctex<Option<serde_json::Value>>;
 
+/// The global cache for glimbot configurations.
 #[derive(Default)]
 pub struct ConfigCache {
+    /// The backing cache
     cache: RwLock<HashMap<GuildId, ArctexMap<String, CacheValue>>>,
+    /// The number of times we had to query the DB backend.
     cache_misses: AtomicU64,
+    /// The number of times the cache was accessed.
     cache_accesses: AtomicU64,
 }
 
+/// The global config cache.
 pub static CONFIG_CACHE: Lazy<ConfigCache> = Lazy::new(Default::default);
 
+/// Represents the values of the cache statistics.
 pub struct CacheStats {
+    /// Number of times the cache was accessed.
     pub accesses: u64,
+    /// Number of times we had to access the DB
     pub misses: u64,
 }
 
 impl ConfigCache {
+    /// Ensures that a cache map exists for a specific guild.
     pub async fn ensure_guild_cache(&self, gid: GuildId) -> ArctexMap<String, CacheValue> {
         let o = self.cache.read().await.get(&gid).cloned();
 
@@ -107,6 +136,7 @@ impl ConfigCache {
         e.or_default().clone()
     }
 
+    /// Gets the entry for the specified guild and key for update or retrieval.
     pub async fn entry(&self, gid: GuildId, key: impl ConfigKey) -> CacheValue {
         let k = key.to_key().into_owned();
         let guild_cache = self.ensure_guild_cache(gid).await;
@@ -123,6 +153,7 @@ impl ConfigCache {
         cv
     }
 
+    /// Gets a view of the current cache statistics. May or may not be accurate.
     pub fn statistics(&self) -> CacheStats {
         CacheStats {
             accesses: self.cache_accesses.load(Ordering::Relaxed),
@@ -130,14 +161,17 @@ impl ConfigCache {
         }
     }
 
+    /// Track an access
     fn inc_access(&self) {
         self.cache_accesses.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Track a miss
     fn inc_miss(&self) {
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Retrieves or inserts a value from the guild cache, using the given future.
     pub async fn get_or_insert_with<K, F, R>(&self, gid: GuildId, key: K, f: F)
                                              -> crate::error::Result<serde_json::Value>
         where K: ConfigKey,
@@ -162,6 +196,7 @@ impl ConfigCache {
         Ok(wg.get_or_insert(f().await?).clone())
     }
 
+    /// Inserts a value into the cache from the given future.
     pub async fn insert_with<K, Fut>(&self, gid: GuildId, key: K, f: Fut)
                                      -> crate::error::Result<()>
         where K: ConfigKey,
@@ -175,6 +210,7 @@ impl ConfigCache {
         Ok(())
     }
 
+    /// Retrieves a value (which may not be set) from the given future or the cache.
     pub async fn get<K, Fut>(&self, gid: GuildId, key: K, f: Fut) -> crate::error::Result<Option<serde_json::Value>>
         where K: ConfigKey,
               Fut: Future<Output=crate::error::Result<Option<serde_json::Value>>> {
@@ -205,12 +241,14 @@ impl ConfigCache {
 }
 
 impl DbContext<'_> {
+    /// Retrieves a reference to the underlying connection pool.
     pub fn conn(&self) -> &PgPool {
         &self.conn
     }
 }
 
 impl<'pool> DbContext<'pool> {
+    /// Creates a guild-focused context wrapping around a connection pool.
     pub fn new<'b: 'pool>(pool: &'b PgPool, guild: GuildId) -> Self {
         Self {
             guild,
@@ -218,6 +256,7 @@ impl<'pool> DbContext<'pool> {
         }
     }
 
+    /// Retrieves or inserts a value for the guild config.
     #[instrument(level = "trace", skip(self, key, def), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
         where B: ConfigKey,
@@ -228,7 +267,8 @@ impl<'pool> DbContext<'pool> {
         Ok(serde_json::from_value(v)?)
     }
 
-    pub async fn get_or_insert_uncached<B, S>(&self, key: B, def: S) -> crate::error::Result<serde_json::Value>
+    /// Retrieves or inserts a value for the guild config. This version always hits the DB.
+    async fn get_or_insert_uncached<B, S>(&self, key: B, def: S) -> crate::error::Result<serde_json::Value>
         where B: ConfigKey,
               S: Serialize + DeserializeOwned {
         let v = serde_json::to_value(def)?;
@@ -247,6 +287,7 @@ impl<'pool> DbContext<'pool> {
         Ok(out.expect("Failed to submit value to DB?"))
     }
 
+    /// Inserts a value into the guild config. This version will hit the cache in addition to the database.
     #[instrument(level = "trace", skip(self, key, val), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
         where B: ConfigKey,
@@ -254,7 +295,8 @@ impl<'pool> DbContext<'pool> {
         CONFIG_CACHE.insert_with(self.guild, key.to_key(), self.insert_uncached(key.to_key(), val)).await
     }
 
-    pub async fn insert_uncached<B, S>(&self, key: B, val: S) -> crate::error::Result<serde_json::Value>
+    /// Inserts a value into the guild config, and will bypass the cache. This should be avoided to avoid stale reads from the cache.
+    async fn insert_uncached<B, S>(&self, key: B, val: S) -> crate::error::Result<serde_json::Value>
         where B: ConfigKey,
               S: Serialize {
         let key = key.to_key();
@@ -277,6 +319,7 @@ impl<'pool> DbContext<'pool> {
         Ok(v)
     }
 
+    /// Hits the cache to retrieve a config value, hitting the DB if necessary.
     #[instrument(level = "trace", skip(self, key), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
         where B: ConfigKey,
@@ -287,7 +330,8 @@ impl<'pool> DbContext<'pool> {
         Ok(v.map(serde_json::from_value).flip()?)
     }
 
-    pub async fn get_uncached<B>(&self, key: B) -> crate::error::Result<Option<serde_json::Value>>
+    /// Grabs a value from the database.
+    async fn get_uncached<B>(&self, key: B) -> crate::error::Result<Option<serde_json::Value>>
         where B: ConfigKey {
         let key = key.to_key();
         let o: Option<ConfigRow> = sqlx::query_as!(
@@ -304,7 +348,9 @@ impl<'pool> DbContext<'pool> {
     }
 }
 
+/// Trait for configuration keys to implement.
 pub trait ConfigKey {
+    /// Should return this key as a view on a string.
     fn to_key(&self) -> Cow<str>;
 }
 

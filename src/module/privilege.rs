@@ -1,3 +1,5 @@
+//! Contains functionality relating to ensuring only privileged users can run certain commands.
+
 use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
@@ -6,16 +8,22 @@ use serenity::model::guild::{Member, Role};
 use crate::db::DbContext;
 use crate::dispatch::{config, Dispatch};
 use crate::dispatch::config::VerifiedRole;
-use crate::error::{DeputyConfused, GuildNotInCache, RoleNotInCache, SysError, UserError};
+use crate::error::{DeputyConfused, GuildNotInCache, RoleNotInCache};
 use crate::module::{ModInfo, Module, Sensitivity};
 
+/// The module which filters messages to ensure that only authorized users can use them.
 pub struct PrivilegeFilter;
 
+/// The config key which needs to have a role set to allow moderators to use sensitive commands.
 pub const PRIV_NAME: &str = "privileged_role";
+
+impl_err!(NoModRole, "Need to set a moderator role -- see privileged_role config option.", true);
+impl_err!(InsufficientUserPrivilege, "You do not have permission to run that command.", true);
 
 #[async_trait::async_trait]
 impl Module for PrivilegeFilter {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
             ModInfo::with_name("privilege-check")
                 .with_filter(true)
@@ -36,7 +44,7 @@ impl Module for PrivilegeFilter {
         let guild_owner = orig
             .guild_field(ctx, |g| g.owner_id)
             .await
-            .ok_or_else(|| SysError::new("Couldn't retrieve guild info."))?;
+            .ok_or(GuildNotInCache)?;
 
         if orig.author.id == guild_owner {
             debug!("Guild owner ran command.");
@@ -47,13 +55,13 @@ impl Module for PrivilegeFilter {
         let v = dis.config_value_t::<VerifiedRole>(PRIV_NAME)?;
         let db = DbContext::new(dis.pool(), orig.guild_id.unwrap());
         let mod_role = v.get(&db).await?
-            .ok_or_else(|| UserError::new("Need to set a moderator role -- see privileged_role config option."))?;
+            .ok_or(NoModRole)?;
 
         if orig.author.has_role(ctx, orig.guild_id.unwrap(), mod_role.into_inner()).await? {
             trace!("Mod ran command.");
             Ok(name)
         } else {
-            Err(UserError::new("You do not have permission to run that command.").into())
+            Err(InsufficientUserPrivilege.into())
         }
     }
 }

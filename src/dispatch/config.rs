@@ -1,3 +1,5 @@
+//! Contains logic related to managing guild config values.
+
 use std::any::Any;
 use std::fmt;
 use std::fmt::Formatter;
@@ -13,8 +15,7 @@ use serenity::model::id::{ChannelId, GuildId, RoleId, UserId};
 use serenity::model::misc::Mentionable;
 
 use crate::db::DbContext;
-use crate::error::{GuildNotInCache, IntoBotErr, SysError, UserError};
-use serenity::model::error::Error::GuildNotFound;
+use crate::error::{GuildNotInCache, IntoBotErr};
 
 /// A trait specifying that a type can be set as a value.
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
@@ -145,7 +146,6 @@ impl<T> Validator for Value<T> where T: ValueType {
     }
 }
 
-// TODO: Make this a shrinkwrap
 /// A role which has been verified to exist in a guild.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
 pub struct VerifiedRole(RoleId);
@@ -153,7 +153,7 @@ pub struct VerifiedRole(RoleId);
 impl VerifiedRole {
     /// Extracts the inner `RoleId`.
     pub fn into_inner(self) -> RoleId {
-        self.0.into()
+        self.0
     }
     /// Converts the internal value into an i64, mostly for use with SQL DBs.
     pub fn to_i64(&self) -> i64 {
@@ -179,10 +179,8 @@ pub trait RoleExt {
 impl RoleExt for RoleId {
     async fn to_role_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let rid = *self;
-        let g = guild.to_guild_cached(ctx).await
-            .ok_or_else(|| SysError::new("Couldn't find guild in cache."))?;
-        let role = g.roles.get(&rid)
-            .ok_or_else(|| UserError::new("No such role in this guild."))?;
+        let g = guild.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
+        let role = g.roles.get(&rid).ok_or(NoSuchRole)?;
         Ok(role.name.clone())
     }
 
@@ -235,7 +233,7 @@ impl FromStrWithCtx for VerifiedChannel {
             guild_info.channels.get(&id).map(|c| c.id)
         } else {
             guild_info.channel_id_from_name(ctx, s).await
-        }.ok_or_else(|| UserError::new(format!("No such channel in this guild: {}", s)))?;
+        }.ok_or(NoSuchChannel)?;
 
         Ok(Self(chan_id))
     }

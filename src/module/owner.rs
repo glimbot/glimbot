@@ -1,6 +1,9 @@
-use std::error::Error;
-use std::fmt;
-use std::fmt::Formatter;
+//! Contains the owner filter, which ensures that commands with Sensitivity::Owner are only
+//! run by the owner of the bot.
+
+
+
+
 
 use once_cell::sync::Lazy;
 use serenity::client::Context;
@@ -9,26 +12,17 @@ use serenity::model::channel::Message;
 use crate::dispatch::Dispatch;
 use crate::module::{ModInfo, Module, Sensitivity};
 
+#[doc(hidden)]
 static MOD_INFO: Lazy<ModInfo> = Lazy::new(|| {
     ModInfo::with_name("owner-check")
         .with_sensitivity(Sensitivity::Low)
         .with_filter(true)
 });
 
+/// Ensures that commands with owner sensitivity are run only by the owner of the bot.
 pub struct OwnerFilter;
 
-#[derive(Debug)]
-pub struct MustBeBotOwner;
-
-impl fmt::Display for MustBeBotOwner {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "You must be the bot owner to do the specified command.")
-    }
-}
-
-impl Error for MustBeBotOwner {}
-
-impl_user_err_from!(MustBeBotOwner);
+impl_err!(MustBeBotOwner, "You must be the bot owner to do the specified command.", true);
 
 
 #[async_trait::async_trait]

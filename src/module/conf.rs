@@ -1,3 +1,5 @@
+//! Contains the `config` command module for updating per-guild config values.
+
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serenity::client::Context;
@@ -10,6 +12,7 @@ use crate::dispatch::Dispatch;
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::util::ClapExt;
 
+/// Module to allow setting configuration values for a guild.
 pub struct ConfigModule;
 
 /// Command to set bot config values for this guild.
@@ -40,6 +43,7 @@ enum ConfigOpt {
 #[async_trait::async_trait]
 impl Module for ConfigModule {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
             ModInfo::with_name("config")
                 .with_command(true)

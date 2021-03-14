@@ -1,3 +1,6 @@
+//! One of the more complex modules in Glimbot; this handles actions relating to moderation of
+//! chats. Allows moderators to ban, kick, etc, and to set timed bans, kicks, etc.
+
 use std::borrow::{Borrow, Cow};
 
 use humantime::Duration;
@@ -19,11 +22,11 @@ use crate::module::{ModInfo, Module, Sensitivity};
 use crate::util::ClapExt;
 use crate::util::constraints::AtMostU64;
 
+/// Contains implementation of the `mod` command.
 pub struct ModerationModule;
 
-pub const TIMED_ACTION_KEY: &str = "timed";
-
-
+/// Common options for each of the various commands. Used to keep the command argument order
+/// sane.
 #[derive(Debug, StructOpt)]
 pub struct CommonOpts {
     /// Which user the action should apply to.
@@ -41,6 +44,7 @@ pub enum ModOpt {
     Kick(CommonOpts),
     /// Ban a user from the server.
     Ban {
+        ///
         #[structopt(flatten)]
         common: CommonOpts,
         /// How long the user should be banned for. Specified in human format, i.e. "5d 2h 5m"
@@ -56,6 +60,7 @@ pub enum ModOpt {
     SoftBan(CommonOpts),
     /// Adds the muted user role to a user.
     Mute {
+        ///
         #[structopt(flatten)]
         common: CommonOpts,
         #[structopt(short = "d")]
@@ -66,6 +71,7 @@ pub enum ModOpt {
 }
 
 impl ModOpt {
+    /// Retrieves the [`CommonOpts`] from each variant.
     pub fn common_args(&self) -> &CommonOpts {
         match self {
             ModOpt::Warn(c) => { c }
@@ -76,6 +82,7 @@ impl ModOpt {
         }
     }
 
+    /// Retrieves the [`ActionKind`] which matches this variant.
     pub fn kind(&self) -> ActionKind {
         use ActionKind::*;
         match self {
@@ -87,30 +94,33 @@ impl ModOpt {
         }
     }
 
+    /// Retrieves the duration for a timed action, if it exists.
     pub fn duration(&self) -> Option<Duration> {
-        let d = match self {
-            ModOpt::Ban { duration, .. } => { duration.clone() }
-            ModOpt::Mute { duration, .. } => { duration.clone() }
+        match self {
+            ModOpt::Ban { duration, .. } => { *duration }
+            ModOpt::Mute { duration, .. } => { *duration }
             _ => None
-        };
-        d
+        }
     }
 
+    /// Retrieves the deletion time for a ban.
     pub fn deletion_time(&self) -> Option<AtMostU64<7>> {
         match self {
-            ModOpt::Ban { delete_messages, .. } => {delete_messages.clone()}
+            ModOpt::Ban { delete_messages, .. } => {*delete_messages}
             _ => None
         }
     }
 }
-
-const MOD_CHANNEL: &str = "mod_log_channel";
-
-pub(crate) const MUTE_ROLE: &str = "mute_role";
+/// Config key for the moderation channel, where bot actions should be logged.
+pub const MOD_CHANNEL: &str = "mod_log_channel";
+/// Config key for the mute role, which should be assigned to users to prevent them from sending
+/// messages.
+pub const MUTE_ROLE: &str = "mute_role";
 
 #[async_trait::async_trait]
 impl Module for ModerationModule {
     fn info(&self) -> &ModInfo {
+        #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("mod")
             .with_sensitivity(Sensitivity::High)
             .with_command(true)
@@ -155,21 +165,32 @@ impl Module for ModerationModule {
     }
 }
 
+/// The kind of action to take against a user.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ActionKind {
+    /// A warning; adds an entry to the mod logs, but does nothing else.
     Warn,
+    /// Removes the user from the server. If the server is public or the user has an invite, they
+    /// can rejoin.
     Kick,
+    /// Bans, then immediately unbans, the user, effectively combining a kick with a message deletion.
     SoftBan,
+    /// Bans the user.
     Ban,
+    /// Applies the mute role to a user.
     Mute,
 }
 
 impl ActionKind {
+    #[doc(hidden)]
     pub const SAFETY_YELLOW: Color = Color::new(0xEED202);
+    #[doc(hidden)]
     pub const SAFETY_ORANGE: Color = Color::new(0xFF6700);
+    #[doc(hidden)]
     pub const TRAFFIC_RED: Color = Color::new(0xBB1310);
 
+    /// Retrieves the color which should be associated with this action in the mod log.
     pub const fn color(&self) -> Color {
         match self {
             ActionKind::Warn => Self::SAFETY_YELLOW,
@@ -180,6 +201,7 @@ impl ActionKind {
         }
     }
 
+    /// Retrieves the lower-case name of this action.
     pub const fn name(&self) -> &str {
         match self {
             ActionKind::Warn => { "warning" }
@@ -190,6 +212,7 @@ impl ActionKind {
         }
     }
 
+    /// Retrieves the title-case name of this action.
     pub const fn title_name(&self) -> &str {
         match self {
             ActionKind::Warn => { "Warning" }
@@ -200,6 +223,8 @@ impl ActionKind {
         }
     }
 
+    /// Returns true if this action has a sensible duration (i.e. can reasonably be automatically
+    /// reversed).
     pub const fn has_duration(&self) -> bool {
         match self {
             ActionKind::Ban |
@@ -209,47 +234,65 @@ impl ActionKind {
     }
 }
 
+/// Contains information about a moderation action.
 #[derive(Debug, Clone)]
 pub struct ModAction {
+    /// The user to take an action against.
     user: Member,
+    /// The action to take.
     action: ActionKind,
+    /// The moderator who initiated the action.
     moderator: UserId,
+    /// The channel in which the action was taken.
     channel: ChannelId,
+    /// An optional string describing why the action was taken.
     reason: Option<Cow<'static, str>>,
+    /// The original offending message.
     original_message: Option<MessageId>,
+    /// The duration of the punishment.
     duration: Option<Duration>,
+    /// The number of days to delete messages for a ban.
     deletion_days: Option<AtMostU64<7>>
 }
 
 impl ModAction {
+    /// Retrieves the number of days for which messages deleted.
     pub fn deletion_days(&self) -> Option<AtMostU64<7>> {
         self.deletion_days
     }
 }
 
 impl ModAction {
+    /// Grabs a reference to the target user.
     pub fn user(&self) -> &Member {
         &self.user
     }
+    /// Accessor for the action.
     pub fn action(&self) -> ActionKind {
         self.action
     }
+    /// Accessor for moderator field.
     pub fn moderator(&self) -> UserId {
         self.moderator
     }
+    /// Accessor for reason field; returns "No reason specified." if not specified.
     pub fn reason(&self) -> &str {
         self.reason.as_ref().map(|r| r.as_ref()).unwrap_or("No reason specified.")
     }
+    /// Returns a reference to the offending message, if it exists.
     pub fn original_message(&self) -> Option<MessageId> {
         self.original_message
     }
+    /// Returns the duration of the action, if it exists.
     pub fn duration(&self) -> Option<Duration> {
         self.duration
     }
+    /// Returns the guild in which the action took place.
     pub fn guild(&self) -> GuildId { self.user().guild_id }
 }
 
 impl ModAction {
+    /// Creates a mod action.
     pub fn new(mem: impl Borrow<Member>, channel_id: ChannelId, moderator: UserId, action: ActionKind) -> Self {
         ModAction {
             user: mem.borrow().clone(),
@@ -263,6 +306,7 @@ impl ModAction {
         }
     }
 
+    /// Performs the action in a guild.
     pub async fn act(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         match self.action {
             ActionKind::Warn => {}
@@ -282,7 +326,7 @@ impl ModAction {
         }
 
         if let Some(d) = self.duration() {
-            let chrono_dur = chrono::Duration::from_std(*d).unwrap_or_else(|_| (*ONE_HUNDREDISH_YEARS).clone());
+            let chrono_dur = chrono::Duration::from_std(*d).unwrap_or_else(|_| (*ONE_HUNDREDISH_YEARS));
             let a = match self.action {
                 ActionKind::Ban => {
                     Action::unban(self.user().user.id, self.guild(), chrono_dur)
@@ -297,21 +341,25 @@ impl ModAction {
         Ok(())
     }
 
+    /// Specifies a duration for the action.
     pub fn with_duration(mut self, duration: Option<Duration>) -> Self {
         self.duration = duration;
         self
     }
 
+    /// Specifies a reason for the action.
     pub fn with_reason(mut self, reason: impl Into<Cow<'static, str>>) -> Self {
         self.reason = reason.into().into();
         self
     }
 
+    /// References a message for the action.
     pub fn with_original_message(mut self, message: MessageId) -> Self {
         self.original_message = Some(message);
         self
     }
 
+    /// Creates an embed representing the action for the mod log.
     pub fn create_embed(&self, embed: &mut CreateEmbed) {
         let user = format!("{} ({})", self.user.display_name(), self.user.user.id);
         let moderator = self.moderator.mention();
@@ -344,6 +392,7 @@ impl ModAction {
         }
     }
 
+    /// Mutes a user by adding the mute role to them.
     pub async fn mute_user(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         let action = self;
         let cfg_db = DbContext::new(dis.pool(), action.guild());
@@ -356,6 +405,7 @@ impl ModAction {
         Ok(())
     }
 
+    /// Creates an embed and places it in the moderation log.
     pub async fn report_action(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         let action = self;
         let mod_channel_v = dis.config_value_t::<VerifiedChannel>(MOD_CHANNEL)?;
@@ -373,8 +423,8 @@ impl ModAction {
     }
 }
 
-impl_err!(NoModChannelSet, "No mod channel has been set for this guild (mod_log_channel).", true);
-impl_err!(NoMuteRoleSet, "No mute role has been set for this guild (mute_role).", true);
+impl_err!(NoModChannelSet, "No mod channel has been set for this guild (`mod_log_channel`).", true);
+impl_err!(NoMuteRoleSet, "No mute role has been set for this guild (`mute_role`).", true);
 
 
 

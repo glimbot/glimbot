@@ -1,3 +1,6 @@
+//! Contains logic for implementing modular functionality for glimbot.
+//! Modules can contain up to one filter and up to one command, and may specify `0..n` configuration values.
+
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Formatter;
@@ -15,19 +18,22 @@ pub mod shutdown;
 pub mod privilege;
 pub mod conf;
 pub mod roles;
-pub(crate) mod moderation;
+pub mod moderation;
 
+/// The sensitivity for a command.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Sensitivity {
+    /// Anyone should be able to run at any time
     Low,
-    // Anyone should be able to run at any time
+    /// Anyone can run, but prone to spamming
     Medium,
-    // Anyone can run, but prone to spamming
+    /// Sensitive commands related to managing users/spam
     High,
-    // Sensitive commands related to managing users/spam,
-    Owner, // Only owner should be able to run
+    /// Commands only the bot owner should be able to run, like `shutdown`.
+    Owner,
 }
 
+// TODO: Make this less messy. Should be refactorable into an ordinal comparison.
 impl PartialOrd for Sensitivity {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
@@ -46,9 +52,9 @@ impl PartialOrd for Sensitivity {
                 _ => unreachable!()
             }.into(),
             (Self::Low, o) => match o {
-                Sensitivity::Low => {Ordering::Equal}
+                Sensitivity::Low => { Ordering::Equal }
                 Sensitivity::Medium |
-                Sensitivity::High => {Ordering::Less}
+                Sensitivity::High => { Ordering::Less }
                 _ => unreachable!()
             }.into()
         }
@@ -67,15 +73,23 @@ impl fmt::Display for Sensitivity {
     }
 }
 
+/// Information about a module, like its name and sensitivity.
 pub struct ModInfo {
+    /// The publicly displayed name of the module, as well as the name
+    /// of any specified command.
     pub name: &'static str,
+    /// The sensitivity of the module. See [`Sensitivity`].
     pub sensitivity: Sensitivity,
+    /// Whether or not this module has a filter specified.
     pub does_filtering: bool,
+    /// Whether or not this module has a command specified.
     pub command: bool,
+    /// Any configuration values related to this module.
     pub config_values: Vec<Arc<dyn config::Validator>>,
 }
 
 impl ModInfo {
+    /// Creates a module with the specified name.
     pub fn with_name(name: &'static str) -> Self {
         ModInfo {
             name,
@@ -86,21 +100,25 @@ impl ModInfo {
         }
     }
 
+    /// Specifies whether or not this module has a command.
     pub fn with_command(mut self, command: bool) -> Self {
         self.command = command;
         self
     }
 
+    /// Specifies a config value for this module.
     pub fn with_config_value(mut self, v: impl config::Validator) -> Self {
         self.config_values.push(Arc::new(v));
         self
     }
 
+    /// Specifies whether or not this module does message filtering.
     pub fn with_filter(mut self, does_filtering: bool) -> Self {
         self.does_filtering = does_filtering;
         self
     }
 
+    /// Specifies a sensitivity for the module.
     pub fn with_sensitivity(mut self, s: Sensitivity) -> Self {
         self.sensitivity = s;
         self
@@ -109,14 +127,22 @@ impl ModInfo {
 
 impl_err!(UnimplementedModule, "This module hasn't been finished yet.", true);
 
+/// The trait all modules need to implement.
 #[async_trait::async_trait]
 pub trait Module: Sync + Send {
+    /// Returns meta information about the module.
     fn info(&self) -> &ModInfo;
 
+    /// Applies a filter to the command. The name of the invoked command is specified;
+    /// it can be changed or left unchanged, and should be returned if it is okay for the command
+    /// to be invoked.
+    ///
+    /// If the command should not be invoked, this command should return an error.
     async fn filter(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, name: String) -> crate::error::Result<String> {
         Ok(name)
     }
 
+    /// Processes a command.
     async fn process(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
         Err(UnimplementedModule.into())
     }
