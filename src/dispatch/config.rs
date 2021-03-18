@@ -16,12 +16,13 @@ use serenity::model::misc::Mentionable;
 
 use crate::db::DbContext;
 use crate::error::{GuildNotInCache, IntoBotErr};
+use std::sync::Arc;
+use crate::util::FlipResultExt;
 
 /// A trait specifying that a type can be set as a value.
 pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone {}
 
 /// Represents a config value, allowing for enforcement of type issues.
-#[derive(Debug)]
 pub struct Value<T>
     where T: ValueType {
     /// The name of the config value.
@@ -29,7 +30,17 @@ pub struct Value<T>
     /// An about description for the config value.
     help: &'static str,
     /// A default value which can be used if `T: Clone` to set an unset config value.
-    default: Option<T>,
+    default: Option<Box<dyn Fn() -> T + Send + Sync>>,
+}
+
+impl<T> fmt::Debug for Value<T> where T: ValueType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct(&format!("Value<{}>", std::any::type_name::<T>()))
+            .field("name", &self.name as &dyn fmt::Debug)
+            .field("help", &self.help as &dyn fmt::Debug)
+            .field("default", &self.default.as_ref().map(|_| "present").unwrap_or("not present") as &dyn fmt::Debug)
+            .finish()
+    }
 }
 
 impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone> ValueType for T {}
@@ -43,30 +54,30 @@ impl<T> Value<T> where T: ValueType {
     }
 
     /// Creates a value with the given name and help, and with the specified default.
-    pub fn with_default(name: &'static str, help: &'static str, default: T) -> Self where T: Clone {
+    pub fn with_default<F>(name: &'static str, help: &'static str, default: F) -> Self where F: Fn() -> T + Send + Sync + 'static {
         let mut out = Self::new(name, help);
-        out.default = Some(default);
+        out.default = Some(Box::new(default));
         out
     }
 
     /// Retrieves the value associated with this value's name, setting it atomically if it doesn't
     /// exist.
-    pub async fn get_or_insert(&self, ctx: &DbContext<'_>, value: T) -> crate::error::Result<T> {
-        ctx.get_or_insert(self.name, value).await
+    pub async fn get_or_insert_with<F>(&self, ctx: &DbContext<'_>, def: F) -> crate::error::Result<Arc<T>> where F: Fn() -> T + Send + Sync {
+        ctx.get_or_insert_with(self.name, def).await
     }
 
     /// Retrieves the value associated with this value's name, setting it atomically if it doesn't
     /// exist using the default specified when this value was constructed.
-    pub async fn get_or_default(&self, ctx: &DbContext<'_>) -> crate::error::Result<T> where T: Clone {
+    pub async fn get_or_default(&self, ctx: &DbContext<'_>) -> crate::error::Result<Arc<T>> {
         if self.default.is_none() {
             return Err(NoDefaultSpecified.into());
         }
 
-        ctx.get_or_insert(self.name, self.default.clone().unwrap()).await
+        ctx.get_or_insert_with(self.name, self.default.as_ref().unwrap()).await
     }
 
     /// Retrieves the value associated with this value's name, returning `None` if hasn't been set.
-    pub async fn get(&self, ctx: &DbContext<'_>) -> crate::error::Result<Option<T>> {
+    pub async fn get(&self, ctx: &DbContext<'_>) -> crate::error::Result<Option<Arc<T>>> {
         ctx.get(self.name).await
     }
 
@@ -120,6 +131,10 @@ pub trait Validator: Send + Sync + Any + DowncastSync + 'static {
     fn help(&self) -> &'static str;
     /// Converts a string into a [`serde_json::Value`].
     async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<serde_json::Value>;
+    /// Gets value from DB.
+    async fn get_json(&self, db: &DbContext<'_>) -> crate::error::Result<Option<serde_json::Value>>;
+    /// Inserts value into DB.
+    async fn insert_json(&self, v: serde_json::Value, db: &DbContext<'_>) -> crate::error::Result<()>;
     /// Converts a JSON representation of the associated type into a string.
     fn display_value(&self, v: serde_json::Value) -> crate::error::Result<String>;
 }
@@ -138,6 +153,16 @@ impl<T> Validator for Value<T> where T: ValueType {
     async fn validate(&self, ctx: &Context, gid: GuildId, s: &str) -> crate::error::Result<serde_json::Value> {
         let s: T = T::from_str_with_ctx(s, ctx, gid).await.into_user_err()?;
         Ok(serde_json::to_value(s)?)
+    }
+
+    async fn get_json(&self, db: &DbContext<'_>) -> crate::error::Result<Option<serde_json::Value>> {
+        let v: Option<Arc<T>> = db.get(self.name).await?;
+        Ok(v.map(serde_json::to_value).flip()?)
+    }
+
+    async fn insert_json(&self, v: serde_json::Value, db: &DbContext<'_>) -> crate::error::Result<()> {
+        let v = serde_json::from_value::<T>(v)?;
+        db.insert(self.name, v).await
     }
 
     fn display_value(&self, v: serde_json::Value) -> crate::error::Result<String> {

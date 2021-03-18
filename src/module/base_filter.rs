@@ -25,7 +25,7 @@ impl Module for BaseFilter {
             ModInfo::with_name("base-filter")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::Low)
-                .with_config_value(config::Value::<char>::with_default("command_prefix", "A single character which will precede commands.", '!'))
+                .with_config_value(config::Value::<char>::with_default("command_prefix", "A single character which will precede commands.", || '!'))
         });
         &INFO
     }

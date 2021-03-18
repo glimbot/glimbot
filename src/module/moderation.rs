@@ -395,7 +395,7 @@ impl ModAction {
     /// Mutes a user by adding the mute role to them.
     pub async fn mute_user(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         let action = self;
-        let cfg_db = DbContext::new(dis.pool(), action.guild());
+        let cfg_db = DbContext::new(dis, action.guild());
         let mute_role = dis.config_value_t::<VerifiedRole>(MUTE_ROLE)?
             .get(&cfg_db)
             .await?
@@ -409,7 +409,7 @@ impl ModAction {
     pub async fn report_action(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         let action = self;
         let mod_channel_v = dis.config_value_t::<VerifiedChannel>(MOD_CHANNEL)?;
-        let cfg_db = DbContext::new(dis.pool(), action.guild());
+        let cfg_db = DbContext::new(dis, action.guild());
         let mod_channel = mod_channel_v.get(&cfg_db)
             .await?
             .ok_or(NoModChannelSet)?;

@@ -8,8 +8,8 @@
 //! Main entry point for Glimbot. Additionally controls DB migration.
 
 #![forbid(unsafe_code)]
-#![deny(clippy::missing_docs_in_private_items)]
-#![deny(unused_must_use, missing_docs, missing_crate_level_docs)]
+// #![deny(clippy::missing_docs_in_private_items, missing_docs, missing_crate_level_docs)]
+#![deny(unused_must_use, )]
 #![allow(dead_code)]
 #![feature(const_panic)]
 #![feature(try_blocks)]

@@ -52,7 +52,7 @@ impl Module for StatusModule {
         Ok(name)
     }
 
-    async fn process(&self, _dis: &Dispatch, ctx: &Context, orig: &Message, _: Vec<String>) -> crate::error::Result<()> {
+    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, _: Vec<String>) -> crate::error::Result<()> {
         let mut elapsed = START_TIME.elapsed();
         elapsed -= Duration::from_nanos(elapsed.subsec_nanos() as u64);
         let pretty_elapsed = humantime::format_duration(elapsed);
@@ -78,7 +78,7 @@ impl Module for StatusModule {
             .len();
 
         let commands_seen = self.command_counter.load(Ordering::Relaxed);
-        let stats = crate::db::CONFIG_CACHE.statistics();
+        let stats = dis.config_cache().statistics();
 
         orig.channel_id.send_message(ctx, |e| {
             e.embed(|emb| {
