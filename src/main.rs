@@ -17,14 +17,18 @@
 #![feature(option_insert, stmt_expr_attributes)]
 
 
-#[macro_use] extern crate serde;
-#[macro_use] extern crate shrinkwraprs;
-#[macro_use] extern crate tracing;
+#[macro_use]
+extern crate serde;
+#[macro_use]
+extern crate shrinkwraprs;
+#[macro_use]
+extern crate tracing;
 
 use clap::{AppSettings, SubCommand};
 #[cfg(target_env = "gnu")]
 use jemallocator::Jemalloc;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
+use std::panic::PanicInfo;
 
 #[macro_use]
 pub mod error;
@@ -43,10 +47,30 @@ pub mod example;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-#[doc(hidden)] // it's a main function
-#[tokio::main]
-async fn main() -> crate::error::Result<()> {
+fn main() -> crate::error::Result<()> {
     better_panic::install();
+
+    let pre_hook = std::panic::take_hook();
+    let hook =  move |p: &PanicInfo<'_>| {
+        if let Err(e) = run::PANIC_ALERT_CHANNEL.send(()) {
+            error!("Unable to alert panic watchdog of failure because {}. Aborting...", e);
+            std::process::abort();
+        }
+        pre_hook(p)
+    };
+
+    std::panic::set_hook(Box::new(hook));
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Unable to build runtime.");
+
+    rt.block_on(async_main())
+}
+
+#[doc(hidden)] // it's a main function
+async fn async_main() -> crate::error::Result<()> {
     let _ = dotenv::dotenv()?;
     let sub = FmtSubscriber::builder()
         .with_env_filter(
@@ -74,7 +98,7 @@ async fn main() -> crate::error::Result<()> {
         ("run", _) => {
             info!("Starting Glimbot.");
             run::start_bot().await?;
-        },
+        }
         ("make-config", Some(m)) => {
             example::handle_matches(m).await?;
         }

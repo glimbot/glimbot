@@ -61,7 +61,7 @@ impl Module for ConfigModule {
                 let new_val = config_val
                     .validate(ctx, orig.guild_id.unwrap(), &value)
                     .await?;
-                let ctx = DbContext::new(dis.pool(), gid);
+                let ctx = dis.db(gid);
                 ctx.insert(&key, new_val).await?;
                 format!("Set {} to specified value.", &key)
             }

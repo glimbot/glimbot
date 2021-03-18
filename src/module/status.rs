@@ -13,15 +13,14 @@ use crate::about::REPO_URL;
 use crate::dispatch::{Dispatch, ShardManKey};
 use crate::module::{ModInfo, Module, Sensitivity};
 
+
 #[doc(hidden)]
 static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
-    ModInfo {
-        name: "bot-status",
-        sensitivity: Sensitivity::Owner,
-        does_filtering: true,
-        command: true,
-        config_values: Vec::new()
-    }
+    ModInfo::with_name("status")
+        .with_sensitivity(Sensitivity::Owner)
+        .with_command(true)
+        .with_filter(true)
+        .with_message_hook(true)
 });
 
 /// Number of bytes in a Mebibyte
@@ -31,7 +30,9 @@ pub const BYTES_IN_MIB: u64 = 1024 * 1024;
 #[derive(Default)]
 pub struct StatusModule {
     /// Tracks the number of valid commands processed by glimbot.
-    command_counter: AtomicU64
+    command_counter: AtomicU64,
+    /// Tracks the number of messages seen.
+    messages_seen: AtomicU64
 }
 
 /// Tracks when the dispatch was started.
@@ -87,17 +88,23 @@ impl Module for StatusModule {
                     .url(REPO_URL)
                     .field("CPU Load", format!("{:5.2} {:5.2} {:5.2}", load.one, load.five, load.fifteen), true)
                     .field("Memory Usage", format!("{:5} / {:5} MiB", used_mem_mib, total_mem_mib), true)
-                    .field("Cache Statistics (misses/accesses)", format!("{} / {}", stats.misses, stats.accesses), true)
+                    .field("Cache Miss/Access", format!("{} / {}", stats.misses, stats.accesses), true)
                     .field("Uptime", pretty_elapsed, false)
                     .field("Sys Uptime", pretty_sys_uptime, false)
                     .field("Shard Id", shard, true)
                     .field("Shard Count", total_shards, true)
                     .field("Commands Seen", commands_seen, true)
+                    .field("Messages Seen", self.messages_seen.load(Ordering::Relaxed), true)
             }).reference_message(orig)
         })
             .await
             .map_err(|e| crate::error::Error::from_err(e, false))?;
 
+        Ok(())
+    }
+
+    async fn on_message(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message) -> crate::error::Result<()> {
+        self.messages_seen.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }

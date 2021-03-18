@@ -18,7 +18,7 @@ use crate::db::DbContext;
 use crate::error::{GuildNotInCache, IntoBotErr};
 
 /// A trait specifying that a type can be set as a value.
-pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display {}
+pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone {}
 
 /// Represents a config value, allowing for enforcement of type issues.
 #[derive(Debug)]
@@ -32,7 +32,7 @@ pub struct Value<T>
     default: Option<T>,
 }
 
-impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display> ValueType for T {}
+impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone> ValueType for T {}
 
 impl_err!(NoDefaultSpecified, "No default is specified for that value.", true);
 

@@ -20,6 +20,11 @@ use sqlx::postgres::PgConnectOptions;
 use tokio::sync::RwLock;
 
 use crate::util::FlipResultExt;
+use std::any::Any;
+use crate::dispatch::config::ValueType;
+use downcast_rs::DowncastSync;
+use downcast_rs::impl_downcast;
+use dyn_clone::DynClone;
 
 pub mod timed;
 
@@ -98,7 +103,16 @@ pub type Arctex<T> = Arc<RwLock<T>>;
 /// An arctex containing a hashmap.
 pub type ArctexMap<K, V> = Arctex<HashMap<K, V>>;
 /// The value of a cache member.
-pub type CacheValue = Arctex<Option<serde_json::Value>>;
+pub type CacheValue = Arctex<Option<CVal>>;
+/// The actual contents of a cache member
+pub type CVal = Arc<dyn Cacheable>;
+
+/// Traits for a cacheable type
+pub trait Cacheable: Any + Send + Sync + DowncastSync + DynClone {}
+impl_downcast!(sync Cacheable);
+dyn_clone::clone_trait_object!(Cacheable);
+impl<T> Cacheable for T where T: Any + Send + Sync + DowncastSync + DynClone {}
+
 
 /// The global cache for glimbot configurations.
 #[derive(Default)]
@@ -121,6 +135,8 @@ pub struct CacheStats {
     /// Number of times we had to access the DB
     pub misses: u64,
 }
+
+impl_err!(BadCast, "Cache contained a mismatched type.", false);
 
 impl ConfigCache {
     /// Ensures that a cache map exists for a specific guild.
@@ -172,48 +188,59 @@ impl ConfigCache {
     }
 
     /// Retrieves or inserts a value from the guild cache, using the given future.
-    pub async fn get_or_insert_with<K, F, R>(&self, gid: GuildId, key: K, f: F)
-                                             -> crate::error::Result<serde_json::Value>
+    pub async fn get_or_insert_with<K, Fut, R>(&self, gid: GuildId, key: K, f: Fut)
+                                               -> crate::error::Result<R>
         where K: ConfigKey,
-              F: FnOnce() -> R,
-              R: Future<Output=crate::error::Result<serde_json::Value>> {
+              Fut: Future<Output=crate::error::Result<R>>,
+              R: Cacheable + Sized + Clone {
         self.inc_access();
         let entry = self.entry(gid, key).await;
         let cur = entry.read().await.clone();
         if let Some(v) = cur {
             trace!("hit cache");
-            return Ok(v);
+            return v.downcast_ref::<R>()
+                .ok_or_else(|| BadCast.into())
+                .map(|r: &R| r.clone());
         }
 
         self.inc_miss();
         let mut wg = entry.write().await;
         if let Some(v) = wg.as_ref() {
             trace!("hit cache; someone beat us to the punch");
-            return Ok(v.clone());
+            let v = v.clone();
+            std::mem::drop(wg);
+            return v.downcast_ref::<R>()
+                .ok_or_else(|| BadCast.into())
+                .map(|r: &R| r.clone());
         }
 
         trace!("cache miss");
-        Ok(wg.get_or_insert(f().await?).clone())
+        let ins = f.await?;
+        wg.insert(Arc::new(ins.clone()));
+        Ok(ins)
     }
 
     /// Inserts a value into the cache from the given future.
-    pub async fn insert_with<K, Fut>(&self, gid: GuildId, key: K, f: Fut)
-                                     -> crate::error::Result<()>
+    pub async fn insert_with<K, Fut, R>(&self, gid: GuildId, key: K, f: Fut)
+                                        -> crate::error::Result<()>
         where K: ConfigKey,
-              Fut: Future<Output=crate::error::Result<serde_json::Value>> {
+              Fut: Future<Output=crate::error::Result<R>>,
+              R: Cacheable + Sized + Clone {
         self.inc_miss();
         self.inc_access();
         let entry = self.entry(gid, key).await;
         let mut wg = entry.write().await;
         trace!("updating cache");
-        wg.insert(f.await?);
+        let ins = f.await?;
+        wg.insert(Arc::new(ins));
         Ok(())
     }
 
     /// Retrieves a value (which may not be set) from the given future or the cache.
-    pub async fn get<K, Fut>(&self, gid: GuildId, key: K, f: Fut) -> crate::error::Result<Option<serde_json::Value>>
+    pub async fn get<K, Fut, R>(&self, gid: GuildId, key: K, f: Fut) -> crate::error::Result<Option<R>>
         where K: ConfigKey,
-              Fut: Future<Output=crate::error::Result<Option<serde_json::Value>>> {
+              Fut: Future<Output=crate::error::Result<Option<R>>>,
+              R: Cacheable + Sized + Clone {
         self.inc_access();
         let k = key.to_key().into_owned();
         let guild_cache = self.ensure_guild_cache(gid).await;
@@ -228,12 +255,18 @@ impl ConfigCache {
                 let v = f.await?;
                 if let Some(v) = &v {
                     let mut optg = e.write().await;
-                    optg.insert(v.clone());
+                    optg.insert(Arc::new(v.clone()));
                 }
 
                 v
             }
-            Some(v) => { v.read().await.clone() }
+            Some(v) => {
+                let o = v.read().await.clone();
+                o.map(|c| c.downcast_ref::<R>()
+                    .cloned()
+                    .ok_or(BadCast))
+                    .flip()?
+            }
         };
 
         Ok(cv)
@@ -260,15 +293,14 @@ impl<'pool> DbContext<'pool> {
     #[instrument(level = "trace", skip(self, key, def), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn get_or_insert<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
         where B: ConfigKey,
-              S: Serialize + DeserializeOwned {
-        let v = CONFIG_CACHE.get_or_insert_with(self.guild, key.to_key(), || async {
-            self.get_or_insert_uncached(key.to_key(), def).await
-        }).await?;
-        Ok(serde_json::from_value(v)?)
+              S: Cacheable + Sized + Clone + Serialize + DeserializeOwned {
+        CONFIG_CACHE.get_or_insert_with(self.guild, key.to_key(),
+            self.get_or_insert_uncached(key.to_key(), def)
+        ).await
     }
 
     /// Retrieves or inserts a value for the guild config. This version always hits the DB.
-    async fn get_or_insert_uncached<B, S>(&self, key: B, def: S) -> crate::error::Result<serde_json::Value>
+    async fn get_or_insert_uncached<B, S>(&self, key: B, def: S) -> crate::error::Result<S>
         where B: ConfigKey,
               S: Serialize + DeserializeOwned {
         let v = serde_json::to_value(def)?;
@@ -284,23 +316,23 @@ impl<'pool> DbContext<'pool> {
         )
             .fetch_one(self.conn())
             .await?;
-        Ok(out.expect("Failed to submit value to DB?"))
+        Ok(serde_json::from_value(out.expect("Failed to submit value to DB?"))?)
     }
 
     /// Inserts a value into the guild config. This version will hit the cache in addition to the database.
     #[instrument(level = "trace", skip(self, key, val), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn insert<B, S>(&self, key: B, val: S) -> crate::error::Result<()>
         where B: ConfigKey,
-              S: Serialize {
+              S: Cacheable + Clone + Sized + Serialize {
         CONFIG_CACHE.insert_with(self.guild, key.to_key(), self.insert_uncached(key.to_key(), val)).await
     }
 
     /// Inserts a value into the guild config, and will bypass the cache. This should be avoided to avoid stale reads from the cache.
-    async fn insert_uncached<B, S>(&self, key: B, val: S) -> crate::error::Result<serde_json::Value>
+    async fn insert_uncached<B, S>(&self, key: B, val: S) -> crate::error::Result<S>
         where B: ConfigKey,
-              S: Serialize {
+              S: Serialize + Clone + Sized {
         let key = key.to_key();
-        let v = serde_json::to_value(val)?;
+        let v = serde_json::to_value(&val)?;
 
         sqlx::query!(
             r#"
@@ -316,23 +348,23 @@ impl<'pool> DbContext<'pool> {
             .execute(self.conn())
             .await
             .map(|_| ())?;
-        Ok(v)
+        Ok(val)
     }
 
     /// Hits the cache to retrieve a config value, hitting the DB if necessary.
     #[instrument(level = "trace", skip(self, key), fields(g = % self.guild, k = % key.to_key()))]
     pub async fn get<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
         where B: ConfigKey,
-              D: DeserializeOwned {
-        let v = CONFIG_CACHE.get(self.guild,
-                                 key.to_key(),
-                                 self.get_uncached(key.to_key())).await?;
-        Ok(v.map(serde_json::from_value).flip()?)
+              D: Cacheable + Sized + Clone + DeserializeOwned {
+        CONFIG_CACHE.get(self.guild,
+                         key.to_key(),
+                         self.get_uncached(key.to_key())).await
     }
 
     /// Grabs a value from the database.
-    async fn get_uncached<B>(&self, key: B) -> crate::error::Result<Option<serde_json::Value>>
-        where B: ConfigKey {
+    async fn get_uncached<B, D>(&self, key: B) -> crate::error::Result<Option<D>>
+        where B: ConfigKey,
+              D: DeserializeOwned {
         let key = key.to_key();
         let o: Option<ConfigRow> = sqlx::query_as!(
             ConfigRow,
@@ -344,7 +376,7 @@ impl<'pool> DbContext<'pool> {
         )
             .fetch_optional(self.conn())
             .await?;
-        Ok(o.map(|c| c.value))
+        Ok(o.map(|c| c.value).map(serde_json::from_value).flip()?)
     }
 }
 

@@ -12,7 +12,7 @@ use futures::stream;
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
 use linked_hash_map::LinkedHashMap;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{OnceCell, Lazy};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serenity::client::{Context, EventHandler};
@@ -43,6 +43,10 @@ pub struct Dispatch {
     filters: Vec<Arc<dyn Module>>,
     /// Modules containing some combination of commands and filters.
     modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
+    /// Modules containing message hooks.
+    message_hooks: Vec<Arc<dyn Module>>,
+    /// Modules containing tick-based hooks
+    tick_hooks: Vec<Arc<dyn Module>>,
     /// Config value validators for the configuration values set in each guild.
     config_values: BTreeMap<&'static str, Arc<dyn config::Validator>>,
     /// Database connection pool.
@@ -116,6 +120,8 @@ impl Dispatch {
             owner,
             filters: Vec::new(),
             modules: Default::default(),
+            message_hooks: vec![],
+            tick_hooks: vec![],
             config_values: Default::default(),
             background_service: Default::default(),
             pool,
@@ -123,23 +129,30 @@ impl Dispatch {
     }
 
     /// Adds a module to this dispatch instance.
+    #[instrument(level = "info", skip(self, module), fields(m = % module.info().name))]
     pub fn add_module<T: Module + 'static>(&mut self, module: T) {
         let a = Arc::new(module);
         let inf = a.info();
 
-        info!("Adding module {} with sensitivity {}, {} command, {} filtering",
-              &inf.name,
-              inf.sensitivity,
-              if inf.command { "is a" } else { "is not a" },
-              if inf.does_filtering { "with" } else { "without" }
-        );
+        info!("with sensitivity: {}", inf.sensitivity);
 
         if inf.does_filtering {
+            info!("does filtering");
             self.filters.push(a.clone());
         }
 
+        if inf.on_message {
+            info!("has on message hook");
+            self.message_hooks.push(a.clone());
+        }
+
+        if inf.on_tick {
+            info!("has on tick hook");
+            self.tick_hooks.push(a.clone());
+        }
+
         for v in &inf.config_values {
-            info!("Module {} adds config value {}", &inf.name, v.name());
+            info!("adds config value {}", v.name());
             self.config_values.insert(v.name(), v.clone());
         }
 
@@ -189,6 +202,12 @@ impl Dispatch {
             trace!("Saw message from self. Ignoring.");
             return Ok(());
         }
+
+        stream::iter(self.message_hooks.iter())
+            .map(Ok)
+            .try_for_each(|m| m.on_message(self, ctx, new_message).instrument(debug_span!("applying msg hook", h=%m.info().name)))
+            .await?;
+
         let first_bit = if let Some(c) = contents.chars().next() {
             c
         } else {
