@@ -162,6 +162,7 @@ impl Dispatch {
         for v in &inf.config_values {
             info!("adds config value {}", v.name());
             self.config_values.insert(v.name(), v.clone());
+            self.config_cache.add_key(v.name());
         }
 
         self.modules.insert(inf.name, a);

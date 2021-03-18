@@ -75,11 +75,11 @@ impl<V> TimedCache<V> {
         Ok(Cached(out))
     }
 
-    pub async fn insert(&self, g: GuildId, v: V) {
+    pub fn insert(&self, g: GuildId, v: V) {
         self.cache.entry(g).or_default().value().store(Some(Arc::new((Instant::now(), v))));
     }
 
     pub fn get(&self, g: GuildId) -> Option<Cached<V>> {
-        self.cache.entry(g).or_default().value().load_full().map(|a| Cached(a))
+        self.cache.entry(g).or_default().value().load_full().map(Cached)
     }
 }
