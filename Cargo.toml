@@ -59,6 +59,7 @@ humantime-serde = "1.0"
 dyn-clone = "1.0"
 dashmap = "4.0"
 arc-swap = "1.2"
+im = "15.0"
 
 [dependencies.serenity]
 version = "0.10"

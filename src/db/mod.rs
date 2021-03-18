@@ -27,6 +27,9 @@ use downcast_rs::impl_downcast;
 use dyn_clone::DynClone;
 use dashmap::DashMap;
 use crate::dispatch::Dispatch;
+use arc_swap::ArcSwap;
+use crate::db::cache::TimedCache;
+use futures::{TryFutureExt, FutureExt};
 
 pub mod timed;
 pub mod cache;
@@ -121,7 +124,7 @@ impl<T> Cacheable for T where T: Any + Send + Sync + DowncastSync + DynClone {}
 #[derive(Default)]
 pub struct ConfigCache {
     /// The backing cache
-    cache: DashMap<GuildId, ArctexMap<String, CacheValue>>,
+    cache: HashMap<String, TimedCache<CVal>>,
     /// The number of times we had to query the DB backend.
     cache_misses: AtomicU64,
     /// The number of times the cache was accessed.
@@ -139,34 +142,6 @@ pub struct CacheStats {
 impl_err!(BadCast, "Cache contained a mismatched type.", false);
 
 impl ConfigCache {
-    /// Ensures that a cache map exists for a specific guild.
-    pub fn ensure_guild_cache(&self, gid: GuildId) -> ArctexMap<String, CacheValue> {
-        let o = self.cache.get(&gid);
-
-        if let Some(m) = o {
-            return m.clone();
-        }
-
-
-        let e = self.cache.entry(gid);
-        e.or_default().clone()
-    }
-
-    /// Gets the entry for the specified guild and key for update or retrieval.
-    pub fn entry(&self, gid: GuildId, key: impl ConfigKey) -> CacheValue {
-        let k = key.to_key().into_owned();
-        let guild_cache = self.ensure_guild_cache(gid);
-        let potential = guild_cache.get(&k);
-
-        let cv = match potential {
-            None => {
-                guild_cache.entry(k).or_default().clone()
-            }
-            Some(v) => { v.clone() }
-        };
-
-        cv
-    }
 
     /// Gets a view of the current cache statistics. May or may not be accurate.
     pub fn statistics(&self) -> CacheStats {
@@ -174,6 +149,10 @@ impl ConfigCache {
             accesses: self.cache_accesses.load(Ordering::Relaxed),
             misses: self.cache_misses.load(Ordering::Relaxed),
         }
+    }
+
+    pub fn add_key(&mut self, s: impl Into<String>) {
+        self.cache.insert(s.into(), TimedCache::new(std::time::Duration::from_secs(3600)));
     }
 
     /// Track an access
@@ -192,29 +171,16 @@ impl ConfigCache {
         where K: ConfigKey,
               Fut: Future<Output=crate::error::Result<R>>,
               R: Cacheable + Sized + Clone {
+
         self.inc_access();
-        let entry = self.entry(gid, key);
-        let cur = entry.read().await.clone();
-        if let Some(v) = cur {
-            trace!("hit cache");
-            return v.downcast_arc::<R>()
-                .map_err(|_| BadCast.into());
-        }
-
-        self.inc_miss();
-        let mut wg = entry.write().await;
-        if let Some(v) = wg.as_ref() {
-            trace!("hit cache; someone beat us to the punch");
-            let v = v.clone();
-            std::mem::drop(wg);
-            return v.downcast_arc::<R>()
-                .map_err(|_| BadCast.into());
-        }
-
-        trace!("cache miss");
-        let ins = Arc::new(f.await?);
-        wg.insert(ins.clone());
-        Ok(ins)
+        let f = f.and_then(|r: R| async { self.inc_miss();
+            let cv: CVal = Arc::new(r);
+            Ok(cv) });
+        let cv = self.cache.get(key.to_key().as_ref())
+            .expect("Unexpected config key")
+            .get_or_insert_with(gid, f)
+            .await?;
+        Arc::clone(cv.as_ref()).downcast_arc::<R>().map_err(|_| BadCast.into())
     }
 
     /// Inserts a value into the cache from the given future.
@@ -225,11 +191,11 @@ impl ConfigCache {
               R: Cacheable + Sized + Clone {
         self.inc_miss();
         self.inc_access();
-        let entry = self.entry(gid, key);
-        let mut wg = entry.write().await;
         trace!("updating cache");
         let ins = f.await?;
-        wg.insert(Arc::new(ins));
+        self.cache.get(key.to_key().as_ref())
+            .expect("Unexpected config key")
+            .insert(gid, Arc::new(ins));
         Ok(())
     }
 
@@ -239,35 +205,14 @@ impl ConfigCache {
               Fut: Future<Output=crate::error::Result<Option<R>>>,
               R: Cacheable + Sized + Clone {
         self.inc_access();
-        let k = key.to_key().into_owned();
-        let guild_cache = self.ensure_guild_cache(gid);
-        let potential = guild_cache.get(&k);
-
-        let cv = match potential {
-            None => {
-                trace!("first read");
-                self.inc_miss();
-                let e = guild_cache.entry(k).or_default().clone();
-                let v = f.await?;
-                if let Some(v) = v {
-                    let mut optg = e.write().await;
-                    let ins = Arc::new(v);
-                    optg.insert(ins.clone());
-                    Some(ins)
-                } else {
-                    None
-                }
-
-            }
-            Some(v) => {
-                let o = v.clone().read().await.clone();
-                o.map(|c| c.downcast_arc::<R>()
-                    .map_err(|_| BadCast))
-                    .flip()?
-            }
-        };
-
-        Ok(cv)
+        let val_cache = self.cache.get(key.to_key().as_ref()).expect("Unexpected config key");
+        if let Some(v) = val_cache.get(gid) {
+            Arc::clone(v.as_ref()).downcast_arc::<R>().map_err(|_| BadCast.into()).map(Some)
+        } else if let Some(v) = f.await? {
+            self.get_or_insert_with(gid, key, async { Ok(v) }).await.map(Some)
+        } else {
+            Ok(None)
+        }
     }
 }
 
