@@ -19,6 +19,7 @@ pub mod privilege;
 pub mod conf;
 pub mod roles;
 pub mod moderation;
+pub mod spam;
 
 /// The sensitivity for a command.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -86,6 +87,10 @@ pub struct ModInfo {
     pub command: bool,
     /// Any configuration values related to this module.
     pub config_values: Vec<Arc<dyn config::Validator>>,
+    /// Whether or not this module has an on_tick hook.
+    pub on_tick: bool,
+    /// Whether or not this message has an on_message hook.
+    pub on_message: bool,
 }
 
 impl ModInfo {
@@ -97,6 +102,8 @@ impl ModInfo {
             does_filtering: false,
             command: false,
             config_values: Vec::new(),
+            on_tick: false,
+            on_message: false
         }
     }
 
@@ -123,6 +130,18 @@ impl ModInfo {
         self.sensitivity = s;
         self
     }
+
+    /// Specifies whether or not this module has a hook that runs every tick.
+    pub fn with_tick_hook(mut self, with_hook: bool) -> Self {
+        self.on_tick = with_hook;
+        self
+    }
+
+    /// Specifies whether or not this module has a hook that runs on every message.
+    pub fn with_message_hook(mut self, with_hook: bool) -> Self {
+        self.on_message = with_hook;
+        self
+    }
 }
 
 impl_err!(UnimplementedModule, "This module hasn't been finished yet.", true);
@@ -144,6 +163,16 @@ pub trait Module: Sync + Send {
 
     /// Processes a command.
     async fn process(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
+        Err(UnimplementedModule.into())
+    }
+
+    /// Hook to run some command at a regular interval.
+    async fn on_tick(&self, _dis: &Dispatch, _ctx: &Context) -> crate::error::Result<()> {
+        Err(UnimplementedModule.into())
+    }
+
+    /// Hook to run on all messages.
+    async fn on_message(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message) -> crate::error::Result<()> {
         Err(UnimplementedModule.into())
     }
 }

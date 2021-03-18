@@ -16,7 +16,6 @@ repository = "https://github.com/glimbot/glimbot"
 description = "A Discord anti-spam and admin bot."
 exclude = [".env"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 dotenv = "0.15"
@@ -55,6 +54,9 @@ smallvec = "1.6"
 sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "migrate", "chrono", "json", "offline"]}
 rand = "0.8"
 zerocopy = "0.4"
+noisy_float = { version = "0.1.15", features = ["serde-1"] }
+humantime-serde = "1.0"
+dyn-clone = "1.0"
 
 [dependencies.serenity]
 version = "0.10"
