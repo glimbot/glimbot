@@ -205,8 +205,8 @@ impl ConfigCache {
               Fut: Future<Output=crate::error::Result<Option<R>>>,
               R: Cacheable + Sized + Clone {
         self.inc_access();
-        let val_cache = self.cache.get(key.to_key().as_ref()).expect("Unexpected config key");
-        if let Some(v) = val_cache.get(gid) {
+        let val_cache = self.cache.get(key.to_key().as_ref()).expect("Unexpected config key").get(gid);
+        if let Some(v) = val_cache {
             Arc::clone(v.as_ref()).downcast_arc::<R>().map_err(|_| BadCast.into()).map(Some)
         } else if let Some(v) = f.await? {
             self.get_or_insert_with(gid, key, async { Ok(v) }).await.map(Some)
