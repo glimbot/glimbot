@@ -57,6 +57,8 @@ zerocopy = "0.4"
 noisy_float = { version = "0.1.15", features = ["serde-1"] }
 humantime-serde = "1.0"
 dyn-clone = "1.0"
+dashmap = "4.0"
+arc-swap = "1.2"
 
 [dependencies.serenity]
 version = "0.10"

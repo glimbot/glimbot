@@ -53,7 +53,7 @@ impl Module for PrivilegeFilter {
 
         // Gotta hit the DB
         let v = dis.config_value_t::<VerifiedRole>(PRIV_NAME)?;
-        let db = DbContext::new(dis.pool(), orig.guild_id.unwrap());
+        let db = DbContext::new(dis, orig.guild_id.unwrap());
         let mod_role = v.get(&db).await?
             .ok_or(NoModRole)?;
 

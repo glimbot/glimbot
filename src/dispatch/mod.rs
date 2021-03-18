@@ -26,7 +26,7 @@ use sqlx::PgPool;
 use tokio::sync::Mutex;
 use tracing::Instrument;
 
-use crate::db::DbContext;
+use crate::db::{DbContext, ConfigCache};
 use crate::db::timed::TimedEvents;
 use crate::dispatch::config::ValueType;
 use crate::error::{LogErrorExt, SysError, UserError};
@@ -53,6 +53,13 @@ pub struct Dispatch {
     pool: PgPool,
     /// The background service, initialized on first start.
     background_service: OnceCell<Arc<BackgroundService>>,
+    config_cache: ConfigCache,
+}
+
+impl Dispatch {
+    pub fn config_cache(&self) -> &ConfigCache {
+        &self.config_cache
+    }
 }
 
 impl Dispatch {
@@ -83,7 +90,7 @@ impl Dispatch {
     }
     /// Convenience function for constructing a DbContext with the pool in this Dispatch.
     pub fn db(&self, gid: GuildId) -> DbContext {
-        DbContext::new(self.pool(), gid)
+        DbContext::new(self, gid)
     }
 }
 
@@ -125,6 +132,7 @@ impl Dispatch {
             config_values: Default::default(),
             background_service: Default::default(),
             pool,
+            config_cache: ConfigCache::default()
         }
     }
 
@@ -216,13 +224,13 @@ impl Dispatch {
         };
 
 
-        let db = DbContext::new(self.pool(), guild);
+        let db = DbContext::new(self, guild);
 
         let command_char = self.config_value_t::<char>("command_prefix")?
             .get_or_default(&db)
             .await?;
 
-        if first_bit != command_char {
+        if first_bit != *command_char {
             trace!("Ignoring non-command message");
             return Ok(());
         }

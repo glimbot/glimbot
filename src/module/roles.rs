@@ -138,7 +138,7 @@ impl Module for RoleModule {
         let role_opts = RoleOpt::from_iter_with_help(command)?;
         let gid = orig.guild_id.unwrap();
 
-        let db = DbContext::new(dis.pool(), gid);
+        let db = DbContext::new(dis, gid);
         let join = JoinableRoles::new(db);
 
         match &role_opts {
@@ -310,7 +310,7 @@ impl Module for ModRoleModule {
 
         ensure_authorized_for_role(ctx, &auth_mem, &full_role).await?;
 
-        let db = DbContext::new(dis.pool(), gid);
+        let db = DbContext::new(dis, gid);
         let join = JoinableRoles::new(db);
         let user = futures::stream::iter(opts.extract_user())
             .then(|s| VerifiedUser::from_str_with_ctx(s, ctx, gid))
