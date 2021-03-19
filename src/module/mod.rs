@@ -20,6 +20,7 @@ pub mod conf;
 pub mod roles;
 pub mod moderation;
 pub mod spam;
+pub mod mock_raid;
 
 /// The sensitivity for a command.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

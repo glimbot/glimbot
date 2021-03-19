@@ -8,6 +8,7 @@ use std::fmt::Formatter;
 use std::str::FromStr;
 
 use crate::error::Error;
+use num::ToPrimitive;
 
 /// A constrained unsigned 64-bit integer. It is guaranteed to be no more than `MAX` and no less than
 /// `MIN`.
@@ -45,7 +46,7 @@ impl<const MIN: u64, const MAX: u64> fmt::Display for ConstraintFailureU64<MIN, 
 impl<const MIN: u64, const MAX: u64> ConstrainedU64<MIN, MAX> {
     /// Creates a new constrained integer, returning an error if the value falls outside the constraint.
     pub const fn new(val: u64) -> Result<Self, ConstraintFailureU64<MIN, MAX>> {
-        if val < MIN || val > MAX {
+        if val >= MIN && val <= MAX {
             Ok(Self { val })
         } else {
             Err(ConstraintFailureU64::new(val))
@@ -110,7 +111,7 @@ impl<const MIN: i64, const MAX: i64> ConstrainedI64<MIN, MAX> {
     /// Creates a new constrained 64-bit signed integer, which is no more than `MAX` and no less
     /// than `MIN`. Returns an error if the value violates the constraints.
     pub const fn new(val: i64) -> Result<Self, ConstraintFailureI64<MIN, MAX>> {
-        if val < MIN || val > MAX {
+        if val >= MIN && val <= MAX {
             Ok(Self { val })
         } else {
             Err(ConstraintFailureI64::new(val))
@@ -153,6 +154,38 @@ impl<const MIN: u64, const MAX: u64> FromStr for ConstrainedU64<MIN, MAX> {
         s.parse::<u64>()
             .map_err(|e| Self::Err::from_err(e, true))
             .and_then(|u| Self::try_from(u).map_err(Error::from))
+    }
+}
+
+impl<const MIN: u64, const MAX: u64> fmt::Display for ConstrainedU64<MIN, MAX> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.val)
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> fmt::Display for ConstrainedI64<MIN, MAX> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.val)
+    }
+}
+
+impl<const MIN: u64, const MAX: u64> ToPrimitive for ConstrainedU64<MIN, MAX> {
+    fn to_i64(&self) -> Option<i64> {
+        Some(self.val as i64)
+    }
+
+    fn to_u64(&self) -> Option<u64> {
+        Some(self.val)
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> ToPrimitive for ConstrainedI64<MIN, MAX> {
+    fn to_i64(&self) -> Option<i64> {
+        Some(self.val)
+    }
+
+    fn to_u64(&self) -> Option<u64> {
+        Some(self.val as u64)
     }
 }
 

@@ -26,6 +26,7 @@ pub async fn start_bot() -> crate::error::Result<()> {
     dispatch.add_module(crate::module::spam::SpamModule::default());
     dispatch.add_module(crate::module::shutdown::Shutdown);
     dispatch.add_module(crate::module::roles::ModRoleModule);
+    dispatch.add_module(crate::module::mock_raid::MockRaidModule::default());
 
     let dispatch = ArcDispatch::from(dispatch);
 

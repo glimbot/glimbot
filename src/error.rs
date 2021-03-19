@@ -220,7 +220,7 @@ macro_rules! impl_err {
 impl_err!(GuildNotInCache, "Couldn't find guild in cache.", false);
 impl_err!(RoleNotInCache, "Couldn't find role in cache.", false);
 impl_err!(InsufficientPermissions, "You do not have the permissions to run this command.", true);
-impl_err!(DeputyConfused, "Your role is not high enough in the hierarchy to do that.", true);
+impl_err!(DeputyConfused, "Performing that action would confuse the deputy. See https://en.wikipedia.org/wiki/Confused_deputy_problem for an explanation.", true);
 
 /// Extension trait for [`sqlx::Error`]
 pub trait DatabaseError {
