@@ -28,7 +28,7 @@ use dyn_clone::DynClone;
 use dashmap::DashMap;
 use crate::dispatch::Dispatch;
 use arc_swap::ArcSwap;
-use crate::db::cache::TimedCache;
+use crate::db::cache::{TimedCache, Cache, NullEvictionStrategy};
 use futures::{TryFutureExt, FutureExt};
 
 pub mod timed;
@@ -124,7 +124,7 @@ impl<T> Cacheable for T where T: Any + Send + Sync + DowncastSync + DynClone {}
 #[derive(Default)]
 pub struct ConfigCache {
     /// The backing cache
-    cache: HashMap<String, TimedCache<CVal>>,
+    cache: HashMap<String, Cache<CVal>>,
     /// The number of times we had to query the DB backend.
     cache_misses: AtomicU64,
     /// The number of times the cache was accessed.
@@ -152,7 +152,7 @@ impl ConfigCache {
     }
 
     pub fn add_key(&mut self, s: impl Into<String>) {
-        self.cache.insert(s.into(), TimedCache::new(std::time::Duration::from_secs(3600)));
+        self.cache.insert(s.into(), Cache::new(NullEvictionStrategy));
     }
 
     /// Track an access
