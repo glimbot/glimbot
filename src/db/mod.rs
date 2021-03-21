@@ -32,7 +32,7 @@ use crate::db::cache::{TimedCache, Cache, NullEvictionStrategy};
 use futures::{TryFutureExt, FutureExt};
 
 pub mod timed;
-pub mod cache;
+#[macro_use] pub mod cache;
 
 /// Gets the path to the default data folder.
 pub fn default_data_folder() -> PathBuf {

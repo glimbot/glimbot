@@ -1,5 +1,7 @@
 //! Contains implementation of caching for per guild objects.
 
+#[macro_use] pub mod kv;
+
 use std::fmt;
 use dashmap::DashMap;
 use serenity::model::id::GuildId;
@@ -79,7 +81,7 @@ impl EvictionStrategy for TimedEvictionStrategy {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct NullEvictionStrategy;
 impl EvictionStrategy for NullEvictionStrategy {
     type Tag = ();
@@ -145,6 +147,12 @@ impl<V: Send + Sync, S: EvictionStrategy + Send + Sync> Cache<V, S> {
 
     pub fn get(&self, g: GuildId) -> Option<Cached<V, S::Tag>> {
         self.ensure_entry(g).load().deref().load_full().map(Cached)
+    }
+}
+
+impl<V: Send + Sync> Cache<V, NullEvictionStrategy> {
+    pub fn null() -> Self {
+        Cache::new(NullEvictionStrategy)
     }
 }
 

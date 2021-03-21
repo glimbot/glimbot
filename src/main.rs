@@ -15,6 +15,7 @@
 #![feature(try_blocks)]
 #![feature(array_chunks)]
 #![feature(option_insert, stmt_expr_attributes)]
+#![feature(duration_saturating_ops)]
 
 
 #[macro_use]

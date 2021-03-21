@@ -7,6 +7,7 @@ use structopt::StructOpt;
 use crate::error::{IntoBotErr, UserError};
 
 pub mod constraints;
+pub mod clock;
 
 /// An extension trait to allow for extraction of the help string from command invocations,
 /// as well as converting errors into Glimbot errors.

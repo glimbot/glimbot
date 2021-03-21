@@ -61,6 +61,9 @@ dashmap = "4.0"
 arc-swap = { version = "1.2", features = ["weak"] }
 im = "15.0"
 num = "0.4"
+sled = "0.34"
+rmp-serde = "0.15"
+seq-macro = "0.2"
 
 [dependencies.serenity]
 version = "0.10"
