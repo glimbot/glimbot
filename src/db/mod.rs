@@ -124,7 +124,7 @@ impl<T> Cacheable for T where T: Any + Send + Sync + DowncastSync + DynClone {}
 #[derive(Default)]
 pub struct ConfigCache {
     /// The backing cache
-    cache: HashMap<String, Cache<CVal>>,
+    cache: HashMap<String, Cache<GuildId, CVal>>,
     /// The number of times we had to query the DB backend.
     cache_misses: AtomicU64,
     /// The number of times the cache was accessed.
@@ -178,7 +178,7 @@ impl ConfigCache {
             Ok(cv) });
         let cv = self.cache.get(key.to_key().as_ref())
             .expect("Unexpected config key")
-            .get_or_insert_with(gid, f)
+            .get_or_insert_with(&gid, f)
             .await?;
         Arc::clone(cv.as_ref()).downcast_arc::<R>().map_err(|_| BadCast.into())
     }
@@ -195,7 +195,7 @@ impl ConfigCache {
         let ins = f.await?;
         self.cache.get(key.to_key().as_ref())
             .expect("Unexpected config key")
-            .insert(gid, Arc::new(ins));
+            .insert(&gid, Arc::new(ins));
         Ok(())
     }
 
@@ -205,7 +205,7 @@ impl ConfigCache {
               Fut: Future<Output=crate::error::Result<Option<R>>>,
               R: Cacheable + Sized + Clone {
         self.inc_access();
-        let val_cache = self.cache.get(key.to_key().as_ref()).expect("Unexpected config key").get(gid);
+        let val_cache = self.cache.get(key.to_key().as_ref()).expect("Unexpected config key").get(&gid);
         if let Some(v) = val_cache {
             Arc::clone(v.as_ref()).downcast_arc::<R>().map_err(|_| BadCast.into()).map(Some)
         } else if let Some(v) = f.await? {

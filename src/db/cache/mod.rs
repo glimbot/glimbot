@@ -1,6 +1,5 @@
 //! Contains implementation of caching for per guild objects.
 
-#[macro_use] pub mod kv;
 
 use std::fmt;
 use dashmap::DashMap;
@@ -12,7 +11,8 @@ use std::time::Instant;
 use arc_swap::access::{Access, Map};
 use std::ops::Deref;
 use std::borrow::Borrow;
-use arc_swap::{ArcSwap, RefCnt};
+use arc_swap::{ArcSwap, RefCnt, AsRaw, Guard};
+use std::hash::Hash;
 
 pub type CacheValue<V, Tag> = Arc<arc_swap::ArcSwapOption<(Tag, V)>>;
 
@@ -52,10 +52,10 @@ impl<V, Tag> Cached<V, Tag> {
     }
 }
 
-pub trait EvictionStrategy: Sized + fmt::Debug {
+pub trait EvictionStrategy<K>: Sized + fmt::Debug where K: Send + Sync + Hash + Eq + Clone {
     type Tag: fmt::Debug + Sized + Clone + Send + Sync;
     fn should_evict(&self, t: &Self::Tag) -> bool;
-    fn create_tag(&self, g: GuildId) -> Self::Tag;
+    fn create_tag(&self, k: &K) -> Self::Tag;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -69,38 +69,39 @@ impl TimedEvictionStrategy {
     }
 }
 
-impl EvictionStrategy for TimedEvictionStrategy {
+impl<K: Send + Sync + Hash + Eq + Clone> EvictionStrategy<K> for TimedEvictionStrategy {
     type Tag = std::time::Instant;
 
     fn should_evict(&self, t: &Self::Tag) -> bool {
         self.ttl > t.elapsed()
     }
 
-    fn create_tag(&self, _g: GuildId) -> Self::Tag {
+    fn create_tag(&self, _g: &K) -> Self::Tag {
         Instant::now()
     }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct NullEvictionStrategy;
-impl EvictionStrategy for NullEvictionStrategy {
+impl<K: Send + Sync + Hash + Eq + Clone> EvictionStrategy<K> for NullEvictionStrategy {
     type Tag = ();
 
     fn should_evict(&self, _t: &Self::Tag) -> bool {
         false
     }
 
-    fn create_tag(&self, _g: GuildId) -> Self::Tag {}
+    fn create_tag(&self, _g: &K) -> Self::Tag {}
 }
 
 
 #[derive(Debug)]
-pub struct Cache<V: Send + Sync, S: EvictionStrategy + Send + Sync = NullEvictionStrategy> {
-    cache: ArcSwap<im::HashMap<GuildId, CacheValue<V, S::Tag>>>,
+pub struct Cache<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync, S: EvictionStrategy<K> + Send + Sync = NullEvictionStrategy> {
+    cache: ArcSwap<im::HashMap<K, CacheValue<V, S::Tag>>>,
     strategy: S,
+
 }
 
-impl<V: Send + Sync, S: EvictionStrategy + Send + Sync> Cache<V, S> {
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync, S: EvictionStrategy<K> + Send + Sync> Cache<K, V, S> {
     pub fn new(strategy: S) -> Self {
         Self {
             cache: Default::default(),
@@ -108,80 +109,172 @@ impl<V: Send + Sync, S: EvictionStrategy + Send + Sync> Cache<V, S> {
         }
     }
 
-    pub fn ensure_entry<'a>(&'a self, g: GuildId) -> impl Access<CacheValue<V, S::Tag>, Guard = impl Send + Deref<Target=CacheValue<V, S::Tag>>> + Send + 'a {
-        if self.cache.load().get(&g).is_none() {
+    pub fn ensure_entry<'a>(&'a self, k: &K) -> impl Access<CacheValue<V, S::Tag>, Guard = impl Send + Deref<Target=CacheValue<V, S::Tag>>> + Send + 'a {
+        if self.cache.load().get(k).is_none() {
             self.cache.rcu(|c| {
                 let mut c = im::HashMap::clone(c);
-                if !c.contains_key(&g) {
-                    c.insert(g, CacheValue::default());
+                if !c.contains_key(k) {
+                    c.insert(k.clone(), CacheValue::default());
                 }
                 c
             });
         }
+        let k = k.clone();
 
-        Map::new(&self.cache, move |c: &im::HashMap<GuildId, CacheValue<V, S::Tag>>| c.get(&g).unwrap())
+        Map::new(&self.cache, move |c: &im::HashMap<K, CacheValue<V, S::Tag>>| c.get(&k).unwrap())
     }
 
-    pub async fn get_or_insert_with<Fut>(&self, g: GuildId, f: Fut) -> crate::error::Result<Cached<V, S::Tag>>
+    /// This is very subtly wrong
+    pub async fn get_or_insert_with<Fut>(&self, key: &K, f: Fut) -> crate::error::Result<Cached<V, S::Tag>>
         where Fut: Future<Output=crate::error::Result<V>> {
-        let cache = self.ensure_entry(g).load();
+        let cache = self.ensure_entry(key).load();
         let c: &CacheValue<V, S::Tag> = cache.deref();
-        let needs_reset = c.load().as_ref().map(|a| self.strategy.should_evict(&(*a).0))
+        let cloaded = c.load_full();
+
+        let needs_reset = cloaded.as_ref().map(|a| self.strategy.should_evict(&(*a).0))
             .unwrap_or(true);
 
         let out = if needs_reset {
             let v = f.await?;
-            let ins = Arc::new((self.strategy.create_tag(g), v));
-            c.store(Some(ins.clone()));
-            ins
+            let ins = Arc::new((self.strategy.create_tag(key), v));
+            let mut out = ins.clone();
+            c.rcu(|r| {
+                if let Some(r) = r {
+                    out = r.clone();
+                    Some(r.clone())
+                } else {
+                    out = ins.clone();
+                    Some(ins.clone())
+                }
+            });
+            out
         } else {
-            c.load_full().unwrap()
+            // The only way to get here is if `needs_reset` is false, which means
+            // the option was full.
+            cloaded.unwrap()
         };
 
         Ok(Cached(out))
     }
 
-    pub fn insert(&self, g: GuildId, v: V) {
-        self.ensure_entry(g).load().deref().store(Some(Arc::new((self.strategy.create_tag(g), v))));
+    pub fn insert(&self, key: &K, v: V) {
+        self.ensure_entry(key).load().deref().store(Some(Arc::new((self.strategy.create_tag(key), v))));
     }
 
-    pub fn get(&self, g: GuildId) -> Option<Cached<V, S::Tag>> {
-        self.ensure_entry(g).load().deref().load_full().map(Cached)
+    pub fn get(&self, key: &K) -> Option<Cached<V, S::Tag>> {
+        let cache = self.ensure_entry(&key).load();
+        let c: &CacheValue<V, S::Tag> = cache.deref();
+
+        let mut res = None;
+        c.rcu(|f| {
+            let needs_reset = f.as_ref().map(|a| self.strategy.should_evict(&(*a).0))
+                .unwrap_or(true);
+            if needs_reset {
+                res = None;
+                None
+            } else {
+                res = f.clone();
+                f.clone()
+            }
+        });
+
+        res.map(Cached)
     }
+
+    pub async fn get_or_insert_sync(&self, key: &K, val: impl FnOnce() -> V) -> Cached<V, S::Tag> {
+        self.get_or_insert_with(key, async { Ok(val()) }).await.unwrap()
+    }
+
+    pub fn reset(&self, key: &K) where V: Default {
+        self.insert(key, V::default())
+    }
+
+    pub fn remove(&self, key: &K) -> Option<Cached<V, S::Tag>> {
+        let mut out = None;
+        self.cache.rcu(|r| {
+            if r.contains_key(key) {
+                let mut o = im::HashMap::clone(r);
+                out = o.remove(key);
+                Arc::new(o)
+            } else {
+                r.clone()
+            }
+        });
+        out.and_then(|cv| cv.load_full()).map(Cached)
+    }
+
+    pub fn update(&self, key: &K, update_fn: impl Fn(Option<&V>) -> Option<V>) -> Update<V, S::Tag> {
+        let cache = self.ensure_entry(&key).load();
+        let c: &CacheValue<V, S::Tag> = cache.deref();
+
+        let mut out = None;
+        c.rcu(|o| {
+            let needs_reset = o.as_ref().map(|a| self.strategy.should_evict(&(*a).0))
+                .unwrap_or(true);
+            let pass_val = if needs_reset {
+                None
+            } else {
+                o.clone()
+            };
+            let new = update_fn(pass_val.as_ref().map(|c| &c.1));
+            let new = new.map(|v| Arc::new((self.strategy.create_tag(key), v)));
+            out = Some(Update {
+                old: pass_val.map(Cached),
+                new: new.clone().map(Cached),
+            });
+            new
+        });
+        out.unwrap()
+    }
+
+    pub fn update_and_fetch(&self, key: &K, update_fn: impl Fn(Option<&V>) -> Option<V>) -> Option<Cached<V, S::Tag>> {
+        self.update(key, update_fn).new
+    }
+
+    pub fn fetch_and_update(&self, key: &K, update_fn: impl Fn(Option<&V>) -> Option<V>) -> Option<Cached<V, S::Tag>> {
+        self.update(key, update_fn).old
+    }
+
 }
 
-impl<V: Send + Sync> Cache<V, NullEvictionStrategy> {
+#[derive(Debug)]
+pub struct Update<V, Tag> {
+    pub old: Option<Cached<V, Tag>>,
+    pub new: Option<Cached<V, Tag>>
+}
+
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> Cache<K, V, NullEvictionStrategy> {
     pub fn null() -> Self {
         Cache::new(NullEvictionStrategy)
     }
 }
 
 #[derive(Debug)]
-pub struct TimedCache<V: Send + Sync> {
-    inner: Cache<V, TimedEvictionStrategy>
+pub struct TimedCache<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> {
+    inner: Cache<K, V, TimedEvictionStrategy>
 }
 
-impl<V: Send + Sync> AsRef<Cache<V, TimedEvictionStrategy>> for TimedCache<V> {
-    fn as_ref(&self) -> &Cache<V, TimedEvictionStrategy> {
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> AsRef<Cache<K, V, TimedEvictionStrategy>> for TimedCache<K, V> {
+    fn as_ref(&self) -> &Cache<K, V, TimedEvictionStrategy> {
         &self.inner
     }
 }
 
-impl<V: Send + Sync> Deref for TimedCache<V> {
-    type Target = Cache<V, TimedEvictionStrategy>;
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> Deref for TimedCache<K, V> {
+    type Target = Cache<K, V, TimedEvictionStrategy>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<V: Send + Sync> Borrow<Cache<V, TimedEvictionStrategy>> for TimedCache<V> {
-    fn borrow(&self) -> &Cache<V, TimedEvictionStrategy> {
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> Borrow<Cache<K, V, TimedEvictionStrategy>> for TimedCache<K, V> {
+    fn borrow(&self) -> &Cache<K, V, TimedEvictionStrategy> {
         &self.inner
     }
 }
 
-impl<V: Send + Sync> TimedCache<V> {
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> TimedCache<K, V> {
     pub fn new(ttl: std::time::Duration) -> Self {
         Self {
             inner: Cache::new(TimedEvictionStrategy::new(ttl))
