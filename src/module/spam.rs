@@ -18,10 +18,8 @@ use serenity::model::id::{GuildId, UserId};
 use regex::Regex;
 use dashmap::DashMap;
 use std::sync::Arc;
-use crate::db::cache::kv;
 use crate::db::cache::{TimedCache, Cache};
 use byteorder::BigEndian;
-use crate::db::cache::kv::{CacheKey, CacheView, IdKey};
 use std::borrow::Cow;
 use zerocopy::{AsBytes, U64};
 use num::Zero;
@@ -93,9 +91,6 @@ impl fmt::Display for SpamConfig {
     }
 }
 
-impl_prefix!(PressurePrefix);
-impl_id_key!(PressureKey, GuildId, UserId);
-
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct UserPressure {
     last_update: CacheInstant,
@@ -116,7 +111,8 @@ impl UserPressure {
         // First apply the decay.
         if conf.pressure_decay != 0.0 && self.pressure != 0.0 {
             let elapsed = self.last_update.elapsed();
-            let decay = R64::try_new(elapsed.as_secs_f64()).unwrap_or(R64::zero()).raw() / conf.pressure_decay.raw().clamp(0.0, f64::MAX);
+            let decay = R64::try_new(elapsed.as_secs_f64()).unwrap_or_else(R64::zero).raw() / conf.pressure_decay.raw().clamp(0.0, f64::MAX);
+            let decay = decay * conf.base_pressure.raw();
             let new_pressure = (self.pressure.raw() - decay).clamp(0.0, f64::MAX);
             self.pressure = R64::new(new_pressure);
         }
@@ -166,15 +162,15 @@ pub fn message_pressure(conf: &SpamConfig, msg: &Message) -> R64 {
 
 /// Module containing the spam filtering logic for Glimbot.
 pub struct SpamModule {
-    cache: TimedCache<SpamConfig>,
-    user_pressure: CacheView<PressurePrefix, PressureKey, UserPressure>
+    cache: TimedCache<GuildId, SpamConfig>,
+    user_pressure: Cache<GuildId, Cache<UserId, UserPressure>>
 }
 
 impl Default for SpamModule {
     fn default() -> Self {
         Self {
             cache: TimedCache::new(std::time::Duration::from_secs(10)),
-            user_pressure: CacheView::new().expect("failed to initialize spam module")
+            user_pressure: Cache::null()
         }
     }
 }
@@ -218,18 +214,18 @@ impl Module for SpamModule {
             let v = dis.config_value_t::<SpamConfig>(SPAM_CONFIG_KEY).unwrap();
             Ok(*v.get_or_default(&db).await?)
         };
-        let conf = self.cache.get_or_insert_with(gid, f).await?;
+        let conf = self.cache.get_or_insert_with(&gid, f).await?;
         let pre_mess = start.elapsed();
         let lp = message_pressure(&conf, orig);
-        let pres = self.user_pressure.update_and_fetch(
-            &PressureKey::new((gid, orig.author.id)),
-            |v| {
-                Ok(Some(v.cloned().unwrap_or_else(Default::default).update(lp, &conf)))
-            }
-        )?.unwrap();
+
+        let pres_cache = self.user_pressure.get_or_insert_sync(&gid, Cache::null).await;
+        let pres = pres_cache.update_and_fetch(&orig.author.id, |o| {
+            let o = o.cloned().unwrap_or_else(Default::default);
+            Some(o.update(lp, &conf))
+        }).unwrap();
         let finish = start.elapsed();
         trace!("message pressure was {:.3}, took {:?}, {:?} of which was cache", lp.raw(), finish, pre_mess);
-        trace!("user pressure is {:?}", pres);
+        trace!("user pressure is {:?}", pres.as_ref());
         Ok(())
     }
 }
