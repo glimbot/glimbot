@@ -19,7 +19,7 @@ use sqlx::PgPool;
 use sqlx::postgres::PgConnectOptions;
 use tokio::sync::RwLock;
 
-use crate::util::FlipResultExt;
+use crate::util::CoalesceResultExt;
 use std::any::Any;
 use crate::dispatch::config::ValueType;
 use downcast_rs::DowncastSync;
@@ -322,7 +322,7 @@ impl<'pool> DbContext<'pool> {
         )
             .fetch_optional(self.conn())
             .await?;
-        Ok(o.map(|c| c.value).map(serde_json::from_value).flip()?)
+        Ok(o.map(|c| c.value).map(serde_json::from_value).transpose()?)
     }
 }
 

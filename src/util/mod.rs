@@ -8,6 +8,7 @@ use crate::error::{IntoBotErr, UserError};
 
 pub mod constraints;
 pub mod clock;
+pub mod ordset;
 
 /// An extension trait to allow for extraction of the help string from command invocations,
 /// as well as converting errors into Glimbot errors.
@@ -32,14 +33,16 @@ pub trait ClapExt: StructOpt + Sized {
 
 impl<T> ClapExt for T where T: StructOpt + Sized {}
 
-/// Allows flipping `Option<Result<T, E>>` into `Result<Option<T>, E>`.
-pub trait FlipResultExt<T, E>: Sized {
-    /// Flips as specified in the type documentation.
-    fn flip(self) -> Result<Option<T>, E>;
+
+pub trait CoalesceResultExt<T>: Sized {
+    fn coalesce(self) -> T;
 }
 
-impl<T, E> FlipResultExt<T, E> for Option<Result<T, E>> {
-    fn flip(self) -> Result<Option<T>, E> {
-        self.map_or(Ok(None), |r| r.map(Some))
+impl<T> CoalesceResultExt<T> for Result<T, T> {
+    fn coalesce(self) -> T {
+        match self {
+            Ok(v) => {v}
+            Err(v) => {v}
+        }
     }
 }

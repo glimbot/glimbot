@@ -31,8 +31,15 @@ use crate::db::timed::TimedEvents;
 use crate::dispatch::config::ValueType;
 use crate::error::{LogErrorExt, SysError, UserError};
 use crate::module::Module;
+use crate::db::cache::TimedCache;
+use crate::util::ordset::OrdSet;
+use crate::dispatch::message_info::MsgInfo;
+use std::num::NonZeroUsize;
 
 pub mod config;
+pub mod message_info;
+
+pub const PER_GUILD_MESSAGE_CACHE_SIZE: usize = 4096;
 
 /// The primary dispatch state holder. Contains information on the various modules
 /// and filters installed in Glimbot.
@@ -54,6 +61,7 @@ pub struct Dispatch {
     /// The background service, initialized on first start.
     background_service: OnceCell<Arc<BackgroundService>>,
     config_cache: ConfigCache,
+    msg_cache: TimedCache<GuildId, OrdSet<MsgInfo>>,
 }
 
 impl Dispatch {
@@ -132,7 +140,8 @@ impl Dispatch {
             config_values: Default::default(),
             background_service: Default::default(),
             pool,
-            config_cache: ConfigCache::default()
+            config_cache: ConfigCache::default(),
+            msg_cache: TimedCache::new(chrono::Duration::days(7).to_std().unwrap()),
         }
     }
 
@@ -182,7 +191,6 @@ impl Dispatch {
 
     /// Retrieves a validator reference by name.
     pub fn config_value(&self, name: &str) -> crate::error::Result<&dyn config::Validator> {
-
         self.config_values.get(name).map(|o| o.as_ref())
             .ok_or_else(|| #[allow(deprecated)] UserError::new(format!("No such config value: {}", name)).into())
     }
@@ -211,6 +219,11 @@ impl Dispatch {
             trace!("Saw message from self. Ignoring.");
             return Ok(());
         }
+
+        self.msg_cache.get_or_insert_sync(&guild, || {
+            OrdSet::new(NonZeroUsize::new(PER_GUILD_MESSAGE_CACHE_SIZE))
+        }).await
+            .insert(new_message.into());
 
         stream::iter(self.message_hooks.iter())
             .map(Ok)
@@ -253,7 +266,7 @@ impl Dispatch {
             c
         } else {
             #[allow(deprecated)]
-            return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
+                return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
         };
         command[0] = cmd;
         let name = cmd_name;
@@ -291,7 +304,7 @@ impl EventHandler for Dispatch {
         }
 
         let elapsed = start.elapsed();
-        debug!("Processing took {} ms", elapsed.as_millis());
+        debug!("Processing took {:?}", elapsed);
     }
 
     async fn ready(&self, ctx: Context, rdy: Ready) {

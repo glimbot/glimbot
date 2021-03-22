@@ -17,7 +17,7 @@ use serenity::model::misc::Mentionable;
 use crate::db::DbContext;
 use crate::error::{GuildNotInCache, IntoBotErr};
 use std::sync::Arc;
-use crate::util::FlipResultExt;
+use crate::util::CoalesceResultExt;
 use std::borrow::Cow;
 
 /// A trait specifying that a type can be set as a value.
@@ -158,7 +158,7 @@ impl<T> Validator for Value<T> where T: ValueType {
 
     async fn get_json(&self, db: &DbContext<'_>) -> crate::error::Result<Option<serde_json::Value>> {
         let v: Option<Arc<T>> = db.get(self.name).await?;
-        Ok(v.map(serde_json::to_value).flip()?)
+        Ok(v.map(serde_json::to_value).transpose()?)
     }
 
     async fn insert_json(&self, v: serde_json::Value, db: &DbContext<'_>) -> crate::error::Result<()> {

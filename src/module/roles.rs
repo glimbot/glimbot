@@ -18,7 +18,7 @@ use crate::dispatch::Dispatch;
 use crate::error::{DatabaseError, GuildNotInCache, RoleNotInCache};
 use crate::module::{ModInfo, Module, Sensitivity};
 use crate::module::privilege::ensure_authorized_for_role;
-use crate::util::{ClapExt, FlipResultExt};
+use crate::util::{ClapExt, CoalesceResultExt};
 
 /// Adds `role` and `mod_role` command.
 pub struct RoleModule;
@@ -316,7 +316,7 @@ impl Module for ModRoleModule {
             .then(|s| VerifiedUser::from_str_with_ctx(s, ctx, gid))
             .next()
             .await
-            .flip()?;
+            .transpose()?;
 
         match opts {
             ModRoleOpt::AddJoinable { .. } => {

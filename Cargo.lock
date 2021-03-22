@@ -727,6 +727,7 @@ dependencies = [
  "noisy_float",
  "num",
  "once_cell",
+ "parking_lot",
  "rand 0.8.3",
  "regex",
  "rmp-serde",
