@@ -15,7 +15,7 @@ use crate::module::{ModInfo, Module, Sensitivity};
 pub struct PrivilegeFilter;
 
 /// The config key which needs to have a role set to allow moderators to use sensitive commands.
-pub const PRIV_NAME: &str = "privileged_role";
+pub const PRIV_ROLE: &str = "privileged_role";
 
 impl_err!(NoModRole, "Need to set a moderator role -- see privileged_role config option.", true);
 impl_err!(InsufficientUserPrivilege, "You do not have permission to run that command.", true);
@@ -28,7 +28,7 @@ impl Module for PrivilegeFilter {
             ModInfo::with_name("privilege-check")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::High)
-                .with_config_value(config::Value::<VerifiedRole>::new(PRIV_NAME, "A role which may run commands requiring elevated privilege."))
+                .with_config_value(config::Value::<VerifiedRole>::new(PRIV_ROLE, "A role which may run commands requiring elevated privilege."))
         });
         &INFO
     }
@@ -52,7 +52,7 @@ impl Module for PrivilegeFilter {
         }
 
         // Gotta hit the DB
-        let v = dis.config_value_t::<VerifiedRole>(PRIV_NAME)?;
+        let v = dis.config_value_t::<VerifiedRole>(PRIV_ROLE)?;
         let db = DbContext::new(dis, orig.guild_id.unwrap());
         let mod_role = v.get(&db).await?
             .ok_or(NoModRole)?;

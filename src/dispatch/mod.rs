@@ -23,7 +23,7 @@ use serenity::model::id::{GuildId, UserId};
 use serenity::prelude::TypeMapKey;
 use serenity::utils::MessageBuilder;
 use sqlx::PgPool;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tracing::Instrument;
 
 use crate::db::{DbContext, ConfigCache};
@@ -62,6 +62,24 @@ pub struct Dispatch {
     background_service: OnceCell<Arc<BackgroundService>>,
     config_cache: ConfigCache,
     msg_cache: TimedCache<GuildId, OrdSet<MsgInfo>>,
+    bot_id_channels: (watch::Sender<Option<UserId>>, watch::Receiver<Option<UserId>>),
+    bot_id_local: thread_local::ThreadLocal<Mutex<watch::Receiver<Option<UserId>>>>
+}
+
+impl Dispatch {
+    pub async fn bot(&self) -> UserId {
+        let mut g = self.bot_id_local
+            .get_or(|| Mutex::new(self.bot_id_channels.1.clone()))
+            .lock()
+            .await;
+
+        if g.borrow().is_none() {
+            g.changed().await.expect("Receiver was unable to get the UserId");
+        }
+
+        let v = g.borrow().as_ref().cloned().expect("False wake up");
+        v
+    }
 }
 
 impl Dispatch {
@@ -142,6 +160,8 @@ impl Dispatch {
             pool,
             config_cache: ConfigCache::default(),
             msg_cache: TimedCache::new(chrono::Duration::days(7).to_std().unwrap()),
+            bot_id_channels: watch::channel(None),
+            bot_id_local: Default::default()
         }
     }
 
@@ -308,6 +328,7 @@ impl EventHandler for Dispatch {
     }
 
     async fn ready(&self, ctx: Context, rdy: Ready) {
+        self.bot_id_channels.0.send(Some(rdy.user.id)).expect("All receivers dropped?");
         info!("up and running in {} guilds.", rdy.guilds.len());
         ctx.set_activity(Activity::playing("Cultist Simulator")).await;
     }

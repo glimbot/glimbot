@@ -746,6 +746,7 @@ dependencies = [
  "structopt",
  "systemstat",
  "thiserror",
+ "thread_local",
  "tokio",
  "tokio-stream",
  "tracing",
