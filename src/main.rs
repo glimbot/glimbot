@@ -80,7 +80,7 @@ async fn async_main() -> crate::error::Result<()> {
         .finish();
 
     tracing::subscriber::set_global_default(sub)?;
-    let matches = clap::App::new(about::BIN_NAME)
+    let matches = clap::App::new(about::BIN_NAME.unwrap())
         .version(about::VERSION)
         .about(about::LICENSE_HEADER)
         .author(about::AUTHOR_NAME)

@@ -181,8 +181,12 @@ impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync, S: EvictionStrategy<K> 
         res.map(Cached)
     }
 
-    pub async fn get_or_insert_sync(&self, key: &K, val: impl FnOnce() -> V) -> Cached<V, S::Tag> {
-        self.get_or_insert_with(key, async { Ok(val()) }).await.unwrap()
+    pub fn get_or_insert_sync(&self, key: &K, val: impl FnOnce() -> V) -> Cached<V, S::Tag> {
+        futures::executor::block_on(self.get_or_insert_with(key, async { Ok(val()) })).unwrap()
+    }
+
+    pub fn get_or_insert_default(&self, key: &K) -> Cached<V, S::Tag> where V: Default {
+        self.get_or_insert_sync(key, V::default)
     }
 
     pub fn reset(&self, key: &K) where V: Default {
@@ -246,6 +250,12 @@ pub struct Update<V, Tag> {
 impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync> Cache<K, V, NullEvictionStrategy> {
     pub fn null() -> Self {
         Cache::new(NullEvictionStrategy)
+    }
+}
+
+impl<K: Send + Sync + Hash + Eq + Clone, V: Send + Sync, S: EvictionStrategy<K> + Send + Sync + Default> Default for Cache<K, V, S> {
+    fn default() -> Self {
+        Self::new(S::default())
     }
 }
 

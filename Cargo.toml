@@ -84,5 +84,11 @@ features = [
 [target.'cfg(target_env = "gnu")'.dependencies]
 jemallocator = "0.3"
 
+[[bench]]
+name = "ordset"
+harness = false
+
 [dev-dependencies]
 more-asserts = "0.2"
+criterion = "0.3"
+rayon = "1.5"

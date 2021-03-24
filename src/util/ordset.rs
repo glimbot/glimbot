@@ -80,21 +80,14 @@ impl<T: Ord + Clone> OrdSet<T> {
         Self::from_inner(FixedSizedInner::new(bound))
     }
 
-    fn insert_inner(s: &mut im::Vector<T>, v: T) -> Option<T> {
-        match s.binary_search(&v) {
-            Ok(i) => {
-                s.get_mut(i).map(|r| std::mem::replace(r, v))
-            }
-            Err(i) => {
-                s.insert(i, v);
-                None
-            }
-        }
+    fn insert_inner(s: &mut im::Vector<T>, v: T) -> bool {
+        let i = s.binary_search(&v).coalesce();
+        s.get_mut(i).map(|r| std::mem::replace(r, v)).is_none()
     }
 
-    /// Inserts a new element, returning the old element if it exists.
+    /// Inserts a new element, true if it wasn't already present.
     /// O(log n)
-    pub fn insert(&self, v: T) -> Option<T> {
+    pub fn insert(&self, v: T) -> bool {
         let ug = self.inner.upgradable_read();
         let mut inner = FixedSizedInner::clone(&ug);
         let out = Self::insert_inner(&mut inner, v);
@@ -106,24 +99,25 @@ impl<T: Ord + Clone> OrdSet<T> {
     }
 
     /// Inserts many new elements, avoiding taking the lock each time. O(n log n)
-    pub fn insert_all(&self, i: impl Iterator<Item=T>) -> Vec<T> {
+    pub fn insert_all(&self, i: impl Iterator<Item=T>) -> usize {
         let mut wg = self.inner.write();
-        let out = i.filter_map(|item| Self::insert_inner(&mut wg, item))
-            .collect_vec();
+        let out = i.map(|item| Self::insert_inner(&mut wg, item))
+            .filter(|b| *b)
+            .count();
         wg.enforce_bound();
         debug_assert!(wg.invariants_satisfied());
         out
     }
 
-    pub fn remove(&self, v: &T) -> Option<T> {
+    pub fn remove(&self, v: &T) -> bool {
         let ug = self.inner.upgradable_read();
         if let Ok(i) = ug.binary_search(v) {
             let mut wg = RwLockUpgradableReadGuard::upgrade(ug);
-            let v = Some(wg.remove(i));
+            wg.remove(i);
             debug_assert!(wg.invariants_satisfied());
-            v
+            true
         } else {
-            None
+            false
         }
     }
 
@@ -183,6 +177,10 @@ impl<T: Ord + Clone> OrdSet<T> {
 
     pub fn snapshot(&self) -> im::Vector<T> {
         self.inner.read().as_ref().clone()
+    }
+
+    pub fn contains(&self, v: &T) -> bool {
+        self.inner.read().inner.contains(v)
     }
 
 }

@@ -242,7 +242,7 @@ impl Dispatch {
 
         self.msg_cache.get_or_insert_sync(&guild, || {
             OrdSet::new(NonZeroUsize::new(PER_GUILD_MESSAGE_CACHE_SIZE))
-        }).await
+        })
             .insert(new_message.into());
 
         stream::iter(self.message_hooks.iter())
