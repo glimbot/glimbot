@@ -223,7 +223,7 @@ impl Module for SpamModule {
         let pre_mess = start.elapsed();
         let lp = message_pressure(&conf, orig);
 
-        let pres_cache = self.user_pressure.get_or_insert_sync(&gid, Cache::null).await;
+        let pres_cache = self.user_pressure.get_or_insert_default(&gid);
         let pres = pres_cache.update_and_fetch(&orig.author.id, |o| {
             let o = o.cloned().unwrap_or_else(Default::default);
             Some(o.update(lp, &conf))

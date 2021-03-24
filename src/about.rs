@@ -8,7 +8,7 @@
 //! Contains constants describing some meta info about this binary.
 
 /// The name of the binary produced.
-pub const BIN_NAME: &str = env!("CARGO_BIN_NAME");
+pub const BIN_NAME: Option<&str> = option_env!("CARGO_BIN_NAME");
 /// Comma separated list of the authors.
 pub const AUTHOR_NAME: &str = env!("CARGO_PKG_AUTHORS");
 /// Short string with the license of the project.
