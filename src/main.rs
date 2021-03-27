@@ -63,6 +63,7 @@ fn main() -> crate::error::Result<()> {
     std::panic::set_hook(Box::new(hook));
 
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .max_blocking_threads(256)
         .enable_all()
         .build()
         .expect("Unable to build runtime.");

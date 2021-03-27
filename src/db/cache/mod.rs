@@ -73,7 +73,7 @@ impl<K: Send + Sync + Hash + Eq + Clone> EvictionStrategy<K> for TimedEvictionSt
     type Tag = std::time::Instant;
 
     fn should_evict(&self, t: &Self::Tag) -> bool {
-        self.ttl > t.elapsed()
+        self.ttl < t.elapsed()
     }
 
     fn create_tag(&self, _g: &K) -> Self::Tag {

@@ -61,9 +61,15 @@ pub struct Dispatch {
     /// The background service, initialized on first start.
     background_service: OnceCell<Arc<BackgroundService>>,
     config_cache: ConfigCache,
-    msg_cache: TimedCache<GuildId, OrdSet<MsgInfo>>,
+    message_cache: TimedCache<GuildId, OrdSet<MsgInfo>>,
     bot_id_channels: (watch::Sender<Option<UserId>>, watch::Receiver<Option<UserId>>),
     bot_id_local: thread_local::ThreadLocal<Mutex<watch::Receiver<Option<UserId>>>>
+}
+
+impl Dispatch {
+    pub fn message_cache(&self) -> &TimedCache<GuildId, OrdSet<MsgInfo>> {
+        &self.message_cache
+    }
 }
 
 impl Dispatch {
@@ -159,7 +165,7 @@ impl Dispatch {
             background_service: Default::default(),
             pool,
             config_cache: ConfigCache::default(),
-            msg_cache: TimedCache::new(chrono::Duration::days(7).to_std().unwrap()),
+            message_cache: TimedCache::new(chrono::Duration::days(7).to_std().unwrap()),
             bot_id_channels: watch::channel(None),
             bot_id_local: Default::default()
         }
@@ -240,7 +246,7 @@ impl Dispatch {
             return Ok(());
         }
 
-        self.msg_cache.get_or_insert_sync(&guild, || {
+        self.message_cache.get_or_insert_sync(&guild, || {
             OrdSet::new(NonZeroUsize::new(PER_GUILD_MESSAGE_CACHE_SIZE))
         })
             .insert(new_message.into());

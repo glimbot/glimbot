@@ -22,6 +22,8 @@ pub mod moderation;
 pub mod spam;
 pub mod mock_raid;
 
+pub const CHECKMARK_IN_GREEN_BOX: char = '✅';
+
 /// The sensitivity for a command.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Sensitivity {

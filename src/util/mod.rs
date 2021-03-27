@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use structopt::StructOpt;
 
 use crate::error::{IntoBotErr, UserError};
+use noisy_float::types::R64;
 
 pub mod constraints;
 pub mod clock;
@@ -44,5 +45,19 @@ impl<T> CoalesceResultExt<T> for Result<T, T> {
             Ok(v) => {v}
             Err(v) => {v}
         }
+    }
+}
+
+impl_err!(NeedNonNegativeFloat, "expected a non-negative real number", true);
+
+pub fn parse_nonnegative_real(s: &str) -> crate::error::Result<R64> {
+    let f = s.parse::<f64>()?;
+    let r = R64::try_new(f)
+        .ok_or(NeedNonNegativeFloat)?;
+
+    if r < 0.0 {
+        Err(NeedNonNegativeFloat.into())
+    } else {
+        Ok(r)
     }
 }

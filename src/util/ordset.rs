@@ -81,8 +81,14 @@ impl<T: Ord + Clone> OrdSet<T> {
     }
 
     fn insert_inner(s: &mut im::Vector<T>, v: T) -> bool {
-        let i = s.binary_search(&v).coalesce();
-        s.get_mut(i).map(|r| std::mem::replace(r, v)).is_none()
+        match s.binary_search(&v) {
+            Ok(idx) => {
+                s.insert(idx, v); true
+            }
+            Err(idx) => {
+                s.insert(idx, v); false
+            }
+        }
     }
 
     /// Inserts a new element, true if it wasn't already present.

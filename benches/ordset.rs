@@ -212,33 +212,33 @@ fn do_ops<C, T>(m: &C, o: Vec<Op<T>>) where C: ConcurrentOrderedSet<T>, T: Ord +
         });
 }
 
-const BATCH_SIZE: usize = 100000;
+const BATCH_SIZE: usize = 1024;
 
 fn bench_ops(c: &mut Criterion) {
     let mut o = generate_ops();
     c.bench_function(
         "btreeset",
         |b| {
+            let set = StdOrdSet::default();
             b.iter_batched(
                 || o.by_ref().take(BATCH_SIZE).collect_vec(),
                 |i| {
-                    let m = StdOrdSet::default();
-                    do_ops(&m, i)
+                    do_ops(&set, i)
                 },
-                BatchSize::NumIterations(BATCH_SIZE as u64)
+                BatchSize::SmallInput
             )
         });
 
     c.bench_function(
         "handroll",
         |b| {
+            let m = OrdSet::new(NonZeroUsize::new(CAPACITY));
             b.iter_batched(
                 || o.by_ref().take(BATCH_SIZE).collect_vec(),
                 |i| {
-                    let m = OrdSet::new(NonZeroUsize::new(CAPACITY));
                     do_ops(&m, i)
                 },
-                BatchSize::NumIterations(BATCH_SIZE as u64)
+                BatchSize::SmallInput
             )
         });
 }
