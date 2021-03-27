@@ -193,7 +193,9 @@ macro_rules! impl_user_err_from {
 }
 
 impl_user_err_from! {
-    UserError
+    UserError,
+    std::num::ParseFloatError,
+    std::num::ParseIntError
 }
 
 /// Implements [`From<Error>`] for a type, with `user_error` set to false

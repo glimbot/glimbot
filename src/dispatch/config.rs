@@ -247,6 +247,12 @@ impl fmt::Display for VerifiedRole {
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
 pub struct VerifiedChannel(ChannelId);
 
+impl VerifiedChannel {
+    pub fn from_known(c: ChannelId) -> VerifiedChannel {
+        Self(c)
+    }
+}
+
 #[async_trait::async_trait]
 impl FromStrWithCtx for VerifiedChannel {
     type Err = crate::error::Error;
@@ -300,6 +306,12 @@ impl VerifiedChannel {
 /// A wrapper around a user id guaranteed to exist in a guild.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, Shrinkwrap)]
 pub struct VerifiedUser(UserId);
+
+impl VerifiedUser {
+    pub fn from_known(u: UserId) -> VerifiedUser {
+        Self(u)
+    }
+}
 
 impl VerifiedUser {
     /// Converts this value into its internal representation.
