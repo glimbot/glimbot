@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use tokio::sync::broadcast;
 
 /// Channel for threads to alert Glimbot that it's panicked.
-pub static PANIC_ALERT_CHANNEL: Lazy<broadcast::Sender<()>> = Lazy::new(|| broadcast::channel(100).0);
+pub static PANIC_ALERT_CHANNEL: Lazy<(broadcast::Sender<()>, broadcast::Receiver<()>)> = Lazy::new(|| broadcast::channel(100));
 
 /// Starts Glimbot.
 /// This is where modules are loaded.
@@ -48,7 +48,7 @@ pub async fn start_bot() -> crate::error::Result<()> {
     });
 
     tokio::spawn(async move {
-        let mut rx = PANIC_ALERT_CHANNEL.subscribe();
+        let mut rx = PANIC_ALERT_CHANNEL.0.subscribe();
         if rx.recv().await.is_ok() {
             error!("Glimbot panicked. Shutting down the shard manager.");
             panic_smc.lock().await.shutdown_all().await;

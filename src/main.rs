@@ -11,17 +11,7 @@
 // #![deny(clippy::missing_docs_in_private_items, missing_docs, missing_crate_level_docs)]
 #![deny(unused_must_use)]
 #![allow(dead_code)]
-#![feature(const_panic)]
-#![feature(try_blocks)]
-#![feature(array_chunks)]
-#![feature(option_insert, stmt_expr_attributes)]
-#![feature(duration_saturating_ops)]
 
-
-#[macro_use]
-extern crate serde;
-#[macro_use]
-extern crate shrinkwraprs;
 #[macro_use]
 extern crate tracing;
 
@@ -31,29 +21,19 @@ use jemallocator::Jemalloc;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use std::panic::PanicInfo;
 
-#[macro_use]
-pub mod error;
-#[macro_use]
-pub mod db;
-#[macro_use]
-pub mod dispatch;
-pub mod about;
-pub mod run;
-pub mod module;
-pub mod util;
-pub mod example;
-
 #[doc(hidden)]
 #[cfg(target_env = "gnu")]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn main() -> crate::error::Result<()> {
+use glimbot::about;
+
+fn main() -> glimbot::error::Result<()> {
     better_panic::install();
 
     let pre_hook = std::panic::take_hook();
     let hook =  move |p: &PanicInfo<'_>| {
-        if let Err(e) = run::PANIC_ALERT_CHANNEL.send(()) {
+        if let Err(e) = glimbot::run::PANIC_ALERT_CHANNEL.0.send(()) {
             error!("Unable to alert panic watchdog of failure because {}. Aborting...", e);
             std::process::abort();
         }
@@ -71,8 +51,11 @@ fn main() -> crate::error::Result<()> {
     rt.block_on(async_main())
 }
 
+/// The name of the binary produced.
+const BIN_NAME: &str = env!("CARGO_BIN_NAME");
+
 #[doc(hidden)] // it's a main function
-async fn async_main() -> crate::error::Result<()> {
+async fn async_main() -> glimbot::error::Result<()> {
     let _ = dotenv::dotenv()?;
     let sub = FmtSubscriber::builder()
         .with_env_filter(
@@ -81,7 +64,7 @@ async fn async_main() -> crate::error::Result<()> {
         .finish();
 
     tracing::subscriber::set_global_default(sub)?;
-    let matches = clap::App::new(about::BIN_NAME.unwrap())
+    let matches = clap::App::new(BIN_NAME)
         .version(about::VERSION)
         .about(about::LICENSE_HEADER)
         .author(about::AUTHOR_NAME)
@@ -90,7 +73,7 @@ async fn async_main() -> crate::error::Result<()> {
                 .about("Starts Glimbot.")
         )
         .subcommand(
-            example::subcommand()
+            glimbot::example::subcommand()
         )
         .setting(AppSettings::SubcommandRequired)
         .get_matches()
@@ -99,10 +82,10 @@ async fn async_main() -> crate::error::Result<()> {
     match matches.subcommand() {
         ("run", _) => {
             info!("Starting Glimbot.");
-            run::start_bot().await?;
+            glimbot::run::start_bot().await?;
         }
         ("make-config", Some(m)) => {
-            example::handle_matches(m).await?;
+            glimbot::example::handle_matches(m).await?;
         }
         _ => unreachable!("Unrecognized command; we should have errored out already.")
     }
