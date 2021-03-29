@@ -132,8 +132,8 @@
       ]
     }
   },
-  "cd4e221980e2d1798acf6fdde719dccecb49cbd6855a5f7154d9487a7f374726": {
-    "query": "\n            SELECT * FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;\n            ",
+  "cc9aa9df9027c15943dbc7876f120351942bcaf868e618b8982f6deaa0f0e6ca": {
+    "query": "\n            SELECT target_user, guild, expiry, action FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;\n            ",
     "describe": {
       "columns": [
         {
