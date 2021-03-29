@@ -11,11 +11,6 @@
 // #![deny(clippy::missing_docs_in_private_items, missing_docs, missing_crate_level_docs)]
 #![deny(unused_must_use)]
 #![allow(dead_code)]
-#![feature(const_panic)]
-#![feature(try_blocks)]
-#![feature(array_chunks)]
-#![feature(option_insert, stmt_expr_attributes)]
-#![feature(duration_saturating_ops)]
 
 #[macro_use]
 extern crate serde;

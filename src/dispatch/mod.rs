@@ -63,7 +63,7 @@ pub struct Dispatch {
     config_cache: ConfigCache,
     message_cache: TimedCache<GuildId, OrdSet<MsgInfo>>,
     bot_id_channels: (watch::Sender<Option<UserId>>, watch::Receiver<Option<UserId>>),
-    bot_id_local: thread_local::ThreadLocal<Mutex<watch::Receiver<Option<UserId>>>>
+    bot_id_local: thread_local::ThreadLocal<Mutex<watch::Receiver<Option<UserId>>>>,
 }
 
 impl Dispatch {
@@ -167,7 +167,7 @@ impl Dispatch {
             config_cache: ConfigCache::default(),
             message_cache: TimedCache::new(chrono::Duration::days(7).to_std().unwrap()),
             bot_id_channels: watch::channel(None),
-            bot_id_local: Default::default()
+            bot_id_local: Default::default(),
         }
     }
 
@@ -218,7 +218,10 @@ impl Dispatch {
     /// Retrieves a validator reference by name.
     pub fn config_value(&self, name: &str) -> crate::error::Result<&dyn config::Validator> {
         self.config_values.get(name).map(|o| o.as_ref())
-            .ok_or_else(|| #[allow(deprecated)] UserError::new(format!("No such config value: {}", name)).into())
+            .ok_or_else(|| {
+                #[allow(deprecated)]
+                    UserError::new(format!("No such config value: {}", name)).into()
+            })
     }
 
     /// Retrieves a validator reference by name, downcasting it to a specified type.
@@ -226,7 +229,10 @@ impl Dispatch {
         where T::Err: std::error::Error + Send + Sized + 'static {
         let v = self.config_value(name)?;
         let out = v.as_any().downcast_ref()
-            .ok_or_else(|| #[allow(deprecated)] SysError::new(format!("Incorrect type downcast for config value {}", name)))?;
+            .ok_or_else(|| {
+                #[allow(deprecated)]
+                    SysError::new(format!("Incorrect type downcast for config value {}", name))
+            })?;
         Ok(out)
     }
 

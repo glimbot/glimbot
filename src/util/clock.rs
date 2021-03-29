@@ -14,6 +14,8 @@ impl CacheInstant {
     }
 
     pub fn elapsed(&self) -> Duration {
-        Instant::now().saturating_duration_since(*BASE).saturating_sub(self.0)
+        Instant::now().saturating_duration_since(*BASE)
+            .checked_sub(self.0)
+            .unwrap_or_default()
     }
 }

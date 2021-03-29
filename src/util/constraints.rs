@@ -27,7 +27,7 @@ pub struct ConstraintFailureU64<const MIN: u64, const MAX: u64> {
 
 impl<const MIN: u64, const MAX: u64> ConstraintFailureU64<MIN, MAX> {
     /// Creates a new error type. Contains a debug assertion that the value *actually* violates the type constraint.
-    pub const fn new(v: u64) -> Self {
+    pub fn new(v: u64) -> Self {
         debug_assert!(v < MIN || v > MAX);
         Self { val: v }
     }
@@ -45,7 +45,7 @@ impl<const MIN: u64, const MAX: u64> fmt::Display for ConstraintFailureU64<MIN, 
 
 impl<const MIN: u64, const MAX: u64> ConstrainedU64<MIN, MAX> {
     /// Creates a new constrained integer, returning an error if the value falls outside the constraint.
-    pub const fn new(val: u64) -> Result<Self, ConstraintFailureU64<MIN, MAX>> {
+    pub fn new(val: u64) -> Result<Self, ConstraintFailureU64<MIN, MAX>> {
         if val >= MIN && val <= MAX {
             Ok(Self { val })
         } else {
@@ -91,7 +91,7 @@ pub struct ConstraintFailureI64<const MIN: i64, const MAX: i64> {
 
 impl<const MIN: i64, const MAX: i64> ConstraintFailureI64<MIN, MAX> {
     /// Creates a new constraint failure.
-    pub const fn new(v: i64) -> Self {
+    pub fn new(v: i64) -> Self {
         debug_assert!(v < MIN || v > MAX);
         Self { val: v }
     }
@@ -110,7 +110,7 @@ impl<const MIN: i64, const MAX: i64> fmt::Display for ConstraintFailureI64<MIN, 
 impl<const MIN: i64, const MAX: i64> ConstrainedI64<MIN, MAX> {
     /// Creates a new constrained 64-bit signed integer, which is no more than `MAX` and no less
     /// than `MIN`. Returns an error if the value violates the constraints.
-    pub const fn new(val: i64) -> Result<Self, ConstraintFailureI64<MIN, MAX>> {
+    pub fn new(val: i64) -> Result<Self, ConstraintFailureI64<MIN, MAX>> {
         if val >= MIN && val <= MAX {
             Ok(Self { val })
         } else {

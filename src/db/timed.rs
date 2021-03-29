@@ -82,7 +82,8 @@ impl ActionFailure {
         } else {
             "backend failure".into()
         };
-        ActionFailure { action, kind: FailureKind::SysError(m) }
+
+        Self::new(action, FailureKind::SysError(m))
     }
 }
 
@@ -260,7 +261,7 @@ impl<'pool> TimedEvents<'pool> {
         let q: sqlx::query::Map<_, _, _> = sqlx::query_as!(
             Row,
             r#"
-            SELECT * FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;
+            SELECT target_user, guild, expiry, action FROM timed_events WHERE expiry <= $1 ORDER BY expiry ASC LIMIT $2;
             "#,
             epoch,
             Self::BATCH_LIMIT as i64

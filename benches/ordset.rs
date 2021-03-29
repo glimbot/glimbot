@@ -1,6 +1,3 @@
-#![feature(iter_map_while)]
-#![feature(map_first_last)]
-
 #[cfg(target_env = "gnu")]
 use jemallocator::Jemalloc;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
@@ -61,7 +58,8 @@ impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + S
         let mut wg = self.write();
         let o = wg.insert(Arc::new(val));
         while wg.len() > CAPACITY {
-            wg.pop_first();
+            let first = wg.iter().next().unwrap().clone();
+            wg.remove(&first);
         }
         o
     }
@@ -86,7 +84,8 @@ impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + S
             }
         ).count();
         while wg.len() > CAPACITY {
-            wg.pop_first();
+            let first = wg.iter().next().unwrap().clone();
+            wg.remove(&first);
         }
         o
     }
@@ -202,7 +201,7 @@ fn generate_ops() -> impl Iterator<Item=Op<usize>> {
 
     let mut i = (0..).map(move |i| i + rng.sample(&jitter));
     std::iter::repeat_with(move || og.select_kind())
-        .map_while(move |k| k.make_op(&mut i))
+        .filter_map(move |k| k.make_op(&mut i))
 }
 
 fn do_ops<C, T>(m: &C, o: Vec<Op<T>>) where C: ConcurrentOrderedSet<T>, T: Ord + Clone + Send + Sync {
