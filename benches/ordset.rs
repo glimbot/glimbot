@@ -44,7 +44,7 @@ trait ConcurrentOrderedSet<T: Ord + Clone + Send + Sync>: Sized + Sync {
     }
 }
 
-const CAPACITY: usize = 1024;
+const CAPACITY: usize = 4096;
 
 impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + Sync {
     type Inner = BTreeSet<Arc<T>>;
