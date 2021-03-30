@@ -170,9 +170,6 @@ impl_std_from! {
     SysError,
     std::io::Error,
     dotenv::Error,
-    sled::Error,
-    rmp_serde::encode::Error,
-    rmp_serde::decode::Error,
     tracing::subscriber::SetGlobalDefaultError,
     std::env::VarError,
     sqlx::migrate::MigrateError

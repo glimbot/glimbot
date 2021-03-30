@@ -21,6 +21,7 @@ pub mod roles;
 pub mod moderation;
 pub mod spam;
 pub mod mock_raid;
+pub mod info;
 
 pub const CHECKMARK_IN_GREEN_BOX: char = '✅';
 
@@ -94,11 +95,13 @@ pub struct ModInfo {
     pub on_tick: bool,
     /// Whether or not this message has an on_message hook.
     pub on_message: bool,
+    /// A short help message about the command.
+    pub short_desc: &'static str,
 }
 
 impl ModInfo {
     /// Creates a module with the specified name.
-    pub fn with_name(name: &'static str) -> Self {
+    pub fn with_name(name: &'static str, desc: &'static str) -> Self {
         ModInfo {
             name,
             sensitivity: Sensitivity::Owner,
@@ -106,7 +109,8 @@ impl ModInfo {
             command: false,
             config_values: Vec::new(),
             on_tick: false,
-            on_message: false
+            on_message: false,
+            short_desc: desc
         }
     }
 

@@ -10,6 +10,8 @@ use crate::dispatch::{config, Dispatch};
 use crate::dispatch::config::VerifiedRole;
 use crate::error::{DeputyConfused, GuildNotInCache, RoleNotInCache};
 use crate::module::{ModInfo, Module, Sensitivity};
+use smallvec::SmallVec;
+use serenity::model::prelude::Guild;
 
 /// The module which filters messages to ensure that only authorized users can use them.
 pub struct PrivilegeFilter;
@@ -25,7 +27,7 @@ impl Module for PrivilegeFilter {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("privilege-check")
+            ModInfo::with_name("privilege-check", "")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::High)
                 .with_config_value(config::Value::<VerifiedRole>::new(PRIV_ROLE, "A role which may run commands requiring elevated privilege."))
@@ -91,4 +93,33 @@ pub async fn ensure_authorized_for_role(ctx: &Context, mem: &Member, role: &Role
         debug!("User authorized.");
         Ok(())
     }
+}
+
+pub async fn authorized_sensitivities(dis: &Dispatch, ctx: &Context, guild: &Guild, user: &Member) -> crate::error::Result<SmallVec<[Sensitivity; 4]>> {
+    let mut out = SmallVec::new();
+
+    out.push(Sensitivity::Low); // Everyone can use this.
+    out.push(Sensitivity::Medium); // At the time of writing this, everyone can use this too.
+
+    let mod_check = async {
+        // Check for moderator
+        let v = dis.config_value_t::<VerifiedRole>(PRIV_ROLE)?;
+        let db = dis.db(guild.id);
+        let mod_role = v.get(&db).await?;
+        if let Some(r) = mod_role {
+            Ok::<bool, crate::error::Error>(user.roles.contains(&r.into_inner()))
+        } else {
+            Ok(false)
+        }
+    };
+
+    if guild.owner_id == user.user.id || mod_check.await? {
+        out.push(Sensitivity::High);
+    }
+
+    if user.user.id == ctx.cache.current_user_id().await {
+        out.push(Sensitivity::Owner);
+    }
+
+    Ok(out)
 }

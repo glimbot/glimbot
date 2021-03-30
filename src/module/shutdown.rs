@@ -15,7 +15,7 @@ impl Module for Shutdown {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("shutdown")
+            ModInfo::with_name("shutdown", "shuts down glimbot.")
                 .with_sensitivity(Sensitivity::Owner)
                 .with_command(true)
         });

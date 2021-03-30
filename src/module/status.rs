@@ -16,7 +16,7 @@ use crate::module::{ModInfo, Module, Sensitivity};
 
 #[doc(hidden)]
 static STATUS_INFO: Lazy<ModInfo> = Lazy::new(|| {
-    ModInfo::with_name("status")
+    ModInfo::with_name("status", "prints info about glimbot's current operating status.")
         .with_sensitivity(Sensitivity::Owner)
         .with_command(true)
         .with_filter(true)
