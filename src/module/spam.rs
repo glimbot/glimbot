@@ -250,7 +250,7 @@ impl Module for SpamModule {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("spam")
+            ModInfo::with_name("spam", "allows moderators to see/set user spam pressure, and to clean up messages in a channel or from a user.")
                 .with_sensitivity(Sensitivity::High)
                 .with_message_hook(true)
                 .with_tick_hook(true)

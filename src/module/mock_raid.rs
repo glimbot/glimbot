@@ -103,7 +103,7 @@ impl_err!(DispatchMissing, "Dispatch wasn't set.", true);
 impl Module for MockRaidModule {
     fn info(&self) -> &ModInfo {
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("mock-raid")
+            ModInfo::with_name("mock-raid", "mocks a raid in this server in glimbot.")
                 .with_sensitivity(Sensitivity::Owner)
                 .with_command(true)
         });

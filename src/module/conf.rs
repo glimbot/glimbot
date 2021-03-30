@@ -44,7 +44,7 @@ impl Module for ConfigModule {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("config")
+            ModInfo::with_name("config", "sets configuration options for the guild.")
                 .with_command(true)
                 .with_sensitivity(Sensitivity::High)
         });

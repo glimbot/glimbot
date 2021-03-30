@@ -22,7 +22,7 @@ impl Module for BaseFilter {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("base-filter")
+            ModInfo::with_name("base-filter", "")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::Low)
                 .with_config_value(config::Value::<char>::with_default("command_prefix", "A single character which will precede commands.", || '!'))

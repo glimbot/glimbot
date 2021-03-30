@@ -121,7 +121,7 @@ pub const MUTE_ROLE: &str = "mute_role";
 impl Module for ModerationModule {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
-        static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("mod")
+        static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("mod", "allows moderators to kick/warn/ban/etc users.")
             .with_sensitivity(Sensitivity::High)
             .with_command(true)
             .with_config_value(Value::<VerifiedChannel>::new(MOD_CHANNEL, "Channel for logging moderation actions."))

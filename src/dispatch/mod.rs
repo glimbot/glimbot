@@ -49,7 +49,7 @@ pub struct Dispatch {
     /// Filters which are applied to each message.
     filters: Vec<Arc<dyn Module>>,
     /// Modules containing some combination of commands and filters.
-    modules: LinkedHashMap<&'static str, Arc<dyn Module>>,
+    modules: BTreeMap<&'static str, Arc<dyn Module>>,
     /// Modules containing message hooks.
     message_hooks: Vec<Arc<dyn Module>>,
     /// Modules containing tick-based hooks
@@ -105,6 +105,13 @@ impl Dispatch {
     /// Retrieves a reference to the map mapping config values to
     pub fn config_values(&self) -> &BTreeMap<&'static str, Arc<dyn config::Validator>> {
         &self.config_values
+    }
+
+    pub fn commands<'me>(&'me self) -> impl Iterator<Item=(&'me str, &'me (dyn Module + 'me))> + 'me {
+        // There's a better way to do this than as_ref, but as_ref does the work for me.
+        #[allow(clippy::useless_asref)]
+        self.modules.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
+            .filter(|(_, v)| v.info().command)
     }
 }
 

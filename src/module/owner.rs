@@ -14,7 +14,7 @@ use crate::module::{ModInfo, Module, Sensitivity};
 
 #[doc(hidden)]
 static MOD_INFO: Lazy<ModInfo> = Lazy::new(|| {
-    ModInfo::with_name("owner-check")
+    ModInfo::with_name("owner-check", "")
         .with_sensitivity(Sensitivity::Low)
         .with_filter(true)
 });

@@ -127,7 +127,7 @@ impl_err!(RoleNotSelfAssignable, "Role is not self-assignable/removable.", true)
 impl Module for RoleModule {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
-        static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("role")
+        static INFO: Lazy<ModInfo> = Lazy::new(|| ModInfo::with_name("role", "allows users to self-manage roles.")
             .with_sensitivity(Sensitivity::Low)
             .with_filter(false)
             .with_command(true));
@@ -288,7 +288,7 @@ impl Module for ModRoleModule {
     fn info(&self) -> &ModInfo {
         #[doc(hidden)]
         static INFO: Lazy<ModInfo> = Lazy::new(|| {
-            ModInfo::with_name("mod-role")
+            ModInfo::with_name("mod-role", "allows moderators to assign/unassign roles, and to make/unmake roles assignable.")
                 .with_command(true)
                 .with_sensitivity(Sensitivity::High)
         });
