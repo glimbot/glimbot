@@ -156,7 +156,7 @@ impl fmt::Display for NoSuchCommand {
 impl std::error::Error for NoSuchCommand {}
 impl_user_err_from!(NoSuchCommand);
 impl_err!(NoDMs, "Glimbot is not designed to respond to DMs.", true);
-impl_err!(ExpectedString, "Expected at least once string to appear in the command.", false);
+impl_err!(ExpectedString, "Expected at least one string to appear in the command.", false);
 
 
 impl Dispatch {
@@ -290,9 +290,13 @@ impl Dispatch {
 
         let cmd_raw = &contents[first_bit.len_utf8()..];
         let cmd_name = cmd_raw.split_whitespace()
-            .next()
-            .ok_or(ExpectedString)?;
+            .next();
 
+        let cmd_name = if let Some(s) = cmd_name {
+            s
+        } else {
+            return Ok(()); // The message was just the command prefix, and not actually a command.
+        };
 
         let cmd = stream::iter(self.filters.iter())
             .map(Result::Ok)
