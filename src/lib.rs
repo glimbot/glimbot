@@ -26,7 +26,7 @@ pub mod db;
 #[macro_use]
 pub mod dispatch;
 pub mod about;
-pub mod run;
-pub mod module;
-pub mod util;
 pub mod example;
+pub mod module;
+pub mod run;
+pub mod util;

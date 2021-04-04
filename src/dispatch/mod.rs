@@ -4,36 +4,36 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Formatter;
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use futures::stream;
 use futures::stream::StreamExt;
 use futures::TryStreamExt;
-use linked_hash_map::LinkedHashMap;
-use once_cell::sync::{OnceCell, Lazy};
+
+use once_cell::sync::{OnceCell};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use serenity::client::{Context, EventHandler};
 use serenity::client::bridge::gateway::ShardManager;
+use serenity::client::{Context, EventHandler};
 use serenity::model::channel::Message;
 use serenity::model::gateway::{Activity, Ready};
 use serenity::model::id::{GuildId, UserId};
 use serenity::prelude::TypeMapKey;
 use serenity::utils::MessageBuilder;
 use sqlx::PgPool;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{watch, Mutex};
 use tracing::Instrument;
 
-use crate::db::{DbContext, ConfigCache};
+use crate::db::cache::TimedCache;
 use crate::db::timed::TimedEvents;
+use crate::db::{ConfigCache, DbContext};
 use crate::dispatch::config::ValueType;
+use crate::dispatch::message_info::MsgInfo;
 use crate::error::{LogErrorExt, SysError, UserError};
 use crate::module::Module;
-use crate::db::cache::TimedCache;
 use crate::util::ordset::OrdSet;
-use crate::dispatch::message_info::MsgInfo;
 use std::num::NonZeroUsize;
 
 pub mod config;
@@ -74,7 +74,8 @@ impl Dispatch {
 
 impl Dispatch {
     pub async fn bot(&self) -> UserId {
-        let mut g = self.bot_id_local
+        let mut g = self
+            .bot_id_local
             .get_or(|| Mutex::new(self.bot_id_channels.1.clone()))
             .lock()
             .await;
@@ -107,10 +108,12 @@ impl Dispatch {
         &self.config_values
     }
 
-    pub fn commands<'me>(&'me self) -> impl Iterator<Item=(&'me str, &'me (dyn Module + 'me))> + 'me {
+    pub fn commands<'me>(&'me self) -> impl Iterator<Item = (&'me str, &'me (dyn Module + 'me))> + 'me {
         // There's a better way to do this than as_ref, but as_ref does the work for me.
         #[allow(clippy::useless_asref)]
-        self.modules.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
+        self.modules
+            .iter()
+            .map(|(k, v)| (k.as_ref(), v.as_ref()))
             .filter(|(_, v)| v.info().command)
     }
 }
@@ -137,7 +140,7 @@ impl Dispatch {
 #[derive(Debug)]
 pub struct NoSuchCommand {
     #[doc(hidden)]
-    cmd: Cow<'static, str>
+    cmd: Cow<'static, str>,
 }
 
 impl NoSuchCommand {
@@ -156,8 +159,11 @@ impl fmt::Display for NoSuchCommand {
 impl std::error::Error for NoSuchCommand {}
 impl_user_err_from!(NoSuchCommand);
 impl_err!(NoDMs, "Glimbot is not designed to respond to DMs.", true);
-impl_err!(ExpectedString, "Expected at least one string to appear in the command.", false);
-
+impl_err!(
+    ExpectedString,
+    "Expected at least one string to appear in the command.",
+    false
+);
 
 impl Dispatch {
     /// Creates an empty dispatch with the given pool and owner.
@@ -224,22 +230,22 @@ impl Dispatch {
 
     /// Retrieves a validator reference by name.
     pub fn config_value(&self, name: &str) -> crate::error::Result<&dyn config::Validator> {
-        self.config_values.get(name).map(|o| o.as_ref())
-            .ok_or_else(|| {
-                #[allow(deprecated)]
-                    UserError::new(format!("No such config value: {}", name)).into()
-            })
+        self.config_values.get(name).map(|o| o.as_ref()).ok_or_else(|| {
+            #[allow(deprecated)]
+            UserError::new(format!("No such config value: {}", name)).into()
+        })
     }
 
     /// Retrieves a validator reference by name, downcasting it to a specified type.
     pub fn config_value_t<T: ValueType>(&self, name: &str) -> crate::error::Result<&config::Value<T>>
-        where T::Err: std::error::Error + Send + Sized + 'static {
+    where
+        T::Err: std::error::Error + Send + Sized + 'static,
+    {
         let v = self.config_value(name)?;
-        let out = v.as_any().downcast_ref()
-            .ok_or_else(|| {
-                #[allow(deprecated)]
-                    SysError::new(format!("Incorrect type downcast for config value {}", name))
-            })?;
+        let out = v.as_any().downcast_ref().ok_or_else(|| {
+            #[allow(deprecated)]
+            SysError::new(format!("Incorrect type downcast for config value {}", name))
+        })?;
         Ok(out)
     }
 
@@ -259,14 +265,16 @@ impl Dispatch {
             return Ok(());
         }
 
-        self.message_cache.get_or_insert_sync(&guild, || {
-            OrdSet::new(NonZeroUsize::new(PER_GUILD_MESSAGE_CACHE_SIZE))
-        })
+        self.message_cache
+            .get_or_insert_sync(&guild, || OrdSet::new(NonZeroUsize::new(PER_GUILD_MESSAGE_CACHE_SIZE)))
             .insert(new_message.into());
 
         stream::iter(self.message_hooks.iter())
             .map(Ok)
-            .try_for_each(|m| m.on_message(self, ctx, new_message).instrument(debug_span!("applying msg hook", h=%m.info().name)))
+            .try_for_each(|m| {
+                m.on_message(self, ctx, new_message)
+                    .instrument(debug_span!("applying msg hook", h=%m.info().name))
+            })
             .await?;
 
         let first_bit = if let Some(c) = contents.chars().next() {
@@ -276,10 +284,10 @@ impl Dispatch {
             return Ok(());
         };
 
-
         let db = DbContext::new(self, guild);
 
-        let command_char = self.config_value_t::<char>("command_prefix")?
+        let command_char = self
+            .config_value_t::<char>("command_prefix")?
             .get_or_default(&db)
             .await?;
 
@@ -289,8 +297,7 @@ impl Dispatch {
         }
 
         let cmd_raw = &contents[first_bit.len_utf8()..];
-        let cmd_name = cmd_raw.split_whitespace()
-            .next();
+        let cmd_name = cmd_raw.split_whitespace().next();
 
         let cmd_name = if let Some(s) = cmd_name {
             s
@@ -303,18 +310,20 @@ impl Dispatch {
             .try_fold(cmd_name.to_string(), |acc, f: &Arc<dyn Module>| {
                 f.filter(self, ctx, new_message, acc)
                     .instrument(debug_span!("applying filter", f=%f.info().name))
-            }).await?;
+            })
+            .await?;
 
         let mut command = if let Some(c) = shlex::split(cmd_raw) {
             c
         } else {
             #[allow(deprecated)]
-                return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
+            return Err(UserError::new(format!("Invalid command string: {}", &contents)).into());
         };
         command[0] = cmd;
         let name = cmd_name;
         let cmd_mod = self.command_module(name)?;
-        cmd_mod.process(self, ctx, &new_message, command)
+        cmd_mod
+            .process(self, ctx, &new_message, command)
             .instrument(info_span!("running command", c=%cmd_mod.info().name))
             .await?;
 
@@ -337,7 +346,10 @@ impl EventHandler for Dispatch {
                     .build()
             } else {
                 MessageBuilder::new()
-                    .push_codeblock_safe("An internal error occurred. If this continues, please contact the bot owner.", None)
+                    .push_codeblock_safe(
+                        "An internal error occurred. If this continues, please contact the bot owner.",
+                        None,
+                    )
                     .build()
             };
 
@@ -351,7 +363,10 @@ impl EventHandler for Dispatch {
     }
 
     async fn ready(&self, ctx: Context, rdy: Ready) {
-        self.bot_id_channels.0.send(Some(rdy.user.id)).expect("All receivers dropped?");
+        self.bot_id_channels
+            .0
+            .send(Some(rdy.user.id))
+            .expect("All receivers dropped?");
         info!("up and running in {} guilds.", rdy.guilds.len());
         ctx.set_activity(Activity::playing("Cultist Simulator")).await;
     }
@@ -401,9 +416,8 @@ impl BackgroundService {
     /// Processes timed events from the database.
     #[instrument(level = "info", skip(self, dis))]
     pub async fn process_events(&self, dis: &Dispatch) -> crate::error::Result<()> {
-        let mut batch = TimedEvents::get_actions_before(dis.pool(),
-                                                        chrono::DateTime::from(chrono::Local::now()),
-        ).await?;
+        let mut batch =
+            TimedEvents::get_actions_before(dis.pool(), chrono::DateTime::from(chrono::Local::now())).await?;
 
         // Avoid a long sequence of the same guild from bulk actions
         batch.shuffle(&mut thread_rng());
@@ -430,13 +444,12 @@ impl EventHandler for ArcDispatch {
                 dispatch: Arc::downgrade(self.as_ref()),
                 ctx,
                 started: Default::default(),
-            }.into()
+            }
+            .into()
         });
 
         let s = service.clone();
-        tokio::task::spawn(async move {
-            s.start().await
-        });
+        tokio::task::spawn(async move { s.start().await });
     }
 
     async fn message(&self, ctx: Context, new_message: Message) {

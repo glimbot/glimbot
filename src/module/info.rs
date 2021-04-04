@@ -1,10 +1,10 @@
-use crate::module::{Module, ModInfo, Sensitivity};
+use crate::dispatch::Dispatch;
+use crate::module::{ModInfo, Module, Sensitivity};
+use crate::util::ClapExt;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
-use crate::dispatch::Dispatch;
-use crate::util::ClapExt;
-use itertools::Itertools;
 
 pub struct HelpModule;
 
@@ -12,7 +12,7 @@ pub struct HelpModule;
 #[derive(Debug, structopt::StructOpt)]
 pub struct InfoOpt {
     /// If specified, prints information about the command. If unspecified, lists available commands.
-    command: Option<String>
+    command: Option<String>,
 }
 
 #[async_trait::async_trait]
@@ -26,7 +26,13 @@ impl Module for HelpModule {
         &INFO
     }
 
-    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(
+        &self,
+        dis: &Dispatch,
+        ctx: &Context,
+        orig: &Message,
+        command: Vec<String>,
+    ) -> crate::error::Result<()> {
         let opts = InfoOpt::from_iter_with_help(command)?;
         let msg = if let Some(cmd) = opts.command {
             let module = dis.command_module(&cmd)?;

@@ -15,7 +15,11 @@ pub struct BaseFilter;
 pub const MAX_COMMAND_LEN: usize = 1500;
 
 impl_err!(NoBots, "Glimbot does not accept command strings from bots.", true);
-impl_err!(CommandTooLong, "Command too long: must be no longer than 1500 UTF-8 code points", true);
+impl_err!(
+    CommandTooLong,
+    "Command too long: must be no longer than 1500 UTF-8 code points",
+    true
+);
 
 #[async_trait::async_trait]
 impl Module for BaseFilter {
@@ -25,12 +29,22 @@ impl Module for BaseFilter {
             ModInfo::with_name("base-filter", "")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::Low)
-                .with_config_value(config::Value::<char>::with_default("command_prefix", "A single character which will precede commands.", || '!'))
+                .with_config_value(config::Value::<char>::with_default(
+                    "command_prefix",
+                    "A single character which will precede commands.",
+                    || '!',
+                ))
         });
         &INFO
     }
 
-    async fn filter(&self, _dis: &Dispatch, _ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(
+        &self,
+        _dis: &Dispatch,
+        _ctx: &Context,
+        orig: &Message,
+        name: String,
+    ) -> crate::error::Result<String> {
         if orig.content.len() > MAX_COMMAND_LEN {
             return Err(CommandTooLong.into());
         }

@@ -6,12 +6,12 @@ use serenity::model::channel::Message;
 use serenity::model::guild::{Member, Role};
 
 use crate::db::DbContext;
-use crate::dispatch::{config, Dispatch};
 use crate::dispatch::config::VerifiedRole;
+use crate::dispatch::{config, Dispatch};
 use crate::error::{DeputyConfused, GuildNotInCache, RoleNotInCache};
 use crate::module::{ModInfo, Module, Sensitivity};
-use smallvec::SmallVec;
 use serenity::model::prelude::Guild;
+use smallvec::SmallVec;
 
 /// The module which filters messages to ensure that only authorized users can use them.
 pub struct PrivilegeFilter;
@@ -19,8 +19,16 @@ pub struct PrivilegeFilter;
 /// The config key which needs to have a role set to allow moderators to use sensitive commands.
 pub const PRIV_ROLE: &str = "privileged_role";
 
-impl_err!(NoModRole, "Need to set a moderator role -- see privileged_role config option.", true);
-impl_err!(InsufficientUserPrivilege, "You do not have permission to run that command.", true);
+impl_err!(
+    NoModRole,
+    "Need to set a moderator role -- see privileged_role config option.",
+    true
+);
+impl_err!(
+    InsufficientUserPrivilege,
+    "You do not have permission to run that command.",
+    true
+);
 
 #[async_trait::async_trait]
 impl Module for PrivilegeFilter {
@@ -30,12 +38,21 @@ impl Module for PrivilegeFilter {
             ModInfo::with_name("privilege-check", "")
                 .with_filter(true)
                 .with_sensitivity(Sensitivity::High)
-                .with_config_value(config::Value::<VerifiedRole>::new(PRIV_ROLE, "A role which may run commands requiring elevated privilege."))
+                .with_config_value(config::Value::<VerifiedRole>::new(
+                    PRIV_ROLE,
+                    "A role which may run commands requiring elevated privilege.",
+                ))
         });
         &INFO
     }
 
-    async fn filter(&self, dis: &Dispatch, ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(
+        &self,
+        dis: &Dispatch,
+        ctx: &Context,
+        orig: &Message,
+        name: String,
+    ) -> crate::error::Result<String> {
         let cmd = dis.command_module(&name)?;
         if cmd.info().sensitivity < Sensitivity::High {
             trace!("Not a sensitive command.");
@@ -43,10 +60,7 @@ impl Module for PrivilegeFilter {
         }
 
         // Either an owner command or a high command. Owner commands are handled by a different module.
-        let guild_owner = orig
-            .guild_field(ctx, |g| g.owner_id)
-            .await
-            .ok_or(GuildNotInCache)?;
+        let guild_owner = orig.guild_field(ctx, |g| g.owner_id).await.ok_or(GuildNotInCache)?;
 
         if orig.author.id == guild_owner {
             debug!("Guild owner ran command.");
@@ -56,10 +70,13 @@ impl Module for PrivilegeFilter {
         // Gotta hit the DB
         let v = dis.config_value_t::<VerifiedRole>(PRIV_ROLE)?;
         let db = DbContext::new(dis, orig.guild_id.unwrap());
-        let mod_role = v.get(&db).await?
-            .ok_or(NoModRole)?;
+        let mod_role = v.get(&db).await?.ok_or(NoModRole)?;
 
-        if orig.author.has_role(ctx, orig.guild_id.unwrap(), mod_role.into_inner()).await? {
+        if orig
+            .author
+            .has_role(ctx, orig.guild_id.unwrap(), mod_role.into_inner())
+            .await?
+        {
             trace!("Mod ran command.");
             Ok(name)
         } else {
@@ -72,9 +89,7 @@ impl Module for PrivilegeFilter {
 /// Necessary to avoid confused deputy issues.
 #[instrument(level = "debug", skip(ctx, mem, role), fields(r = % role.id))]
 pub async fn ensure_authorized_for_role(ctx: &Context, mem: &Member, role: &Role) -> crate::error::Result<()> {
-    let guild = mem.guild_id.to_guild_cached(ctx)
-        .await
-        .ok_or(GuildNotInCache)?;
+    let guild = mem.guild_id.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
     debug!("Checking if owner.");
     if guild.owner_id == mem.user.id {
         debug!("Command run by guild owner.");
@@ -82,9 +97,7 @@ pub async fn ensure_authorized_for_role(ctx: &Context, mem: &Member, role: &Role
     }
 
     debug!("Not owner; checking highest role.");
-    let (_max_role, pos) = mem.highest_role_info(ctx)
-        .await
-        .ok_or(RoleNotInCache)?;
+    let (_max_role, pos) = mem.highest_role_info(ctx).await.ok_or(RoleNotInCache)?;
 
     if pos < role.position {
         debug!("User role not high enough: {} < {}", pos, role.position);
@@ -95,7 +108,12 @@ pub async fn ensure_authorized_for_role(ctx: &Context, mem: &Member, role: &Role
     }
 }
 
-pub async fn authorized_sensitivities(dis: &Dispatch, ctx: &Context, guild: &Guild, user: &Member) -> crate::error::Result<SmallVec<[Sensitivity; 4]>> {
+pub async fn authorized_sensitivities(
+    dis: &Dispatch,
+    ctx: &Context,
+    guild: &Guild,
+    user: &Member,
+) -> crate::error::Result<SmallVec<[Sensitivity; 4]>> {
     let mut out = SmallVec::new();
 
     out.push(Sensitivity::Low); // Everyone can use this.

@@ -12,8 +12,7 @@ pub const AUTHOR_NAME: &str = env!("CARGO_PKG_AUTHORS");
 /// Short string with the license of the project.
 pub const LICENSE: &str = env!("CARGO_PKG_LICENSE");
 /// Short version of the glimbot copyright header.
-pub const LICENSE_HEADER: &str =
-r#"Glimbot - A Discord anti-spam and administration bot.
+pub const LICENSE_HEADER: &str = r#"Glimbot - A Discord anti-spam and administration bot.
 Copyright (C) 2020 Nick Samson
 
 This binary is subject to the terms of the Mozilla Public

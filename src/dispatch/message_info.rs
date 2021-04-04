@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serenity::model::id::{UserId, ChannelId, MessageId};
+use serenity::model::id::{ChannelId, MessageId, UserId};
 use serenity::model::prelude::Message;
 use std::borrow::Borrow;
 
@@ -18,7 +18,7 @@ impl<BM: Borrow<Message>> From<BM> for MsgInfo {
             timestamp: m.timestamp,
             user: m.author.id,
             channel: m.channel_id,
-            msg: m.id
+            msg: m.id,
         }
     }
 }

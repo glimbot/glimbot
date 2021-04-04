@@ -51,15 +51,19 @@ impl Module for ConfigModule {
         &INFO
     }
 
-    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(
+        &self,
+        dis: &Dispatch,
+        ctx: &Context,
+        orig: &Message,
+        command: Vec<String>,
+    ) -> crate::error::Result<()> {
         let opts = ConfigOpt::from_iter_with_help(command)?;
         let gid = orig.guild_id.unwrap();
         let message = match opts {
             ConfigOpt::Set { key, value } => {
                 let config_val = dis.config_value(&key)?;
-                let new_val = config_val
-                    .validate(ctx, orig.guild_id.unwrap(), &value)
-                    .await?;
+                let new_val = config_val.validate(ctx, orig.guild_id.unwrap(), &value).await?;
                 let ctx = dis.db(gid);
                 config_val.insert_json(new_val, &ctx).await?;
                 format!("Set {} to specified value.", &key)
@@ -70,28 +74,19 @@ impl Module for ConfigModule {
                 let val: Option<serde_json::Value> = config_val.get_json(&db).await?;
 
                 match val {
-                    None => { "<unset>".to_string() }
-                    Some(v) => {
-                        config_val.display_value(v)?
-                    }
+                    None => "<unset>".to_string(),
+                    Some(v) => config_val.display_value(v)?,
                 }
             }
-            ConfigOpt::List => {
-                dis.config_values().keys().join(", ")
-            }
+            ConfigOpt::List => dis.config_values().keys().join(", "),
             ConfigOpt::Info { key } => {
                 let config_val = dis.config_value(&key)?;
                 format!("{}: {}", key, config_val.help())
             }
         };
 
-        let message = content_safe(ctx,
-                                   message,
-                                   &ContentSafeOptions::default()
-                                       .display_as_member_from(gid)).await;
-        let message = MessageBuilder::new()
-            .push_codeblock_safe(message, None)
-            .build();
+        let message = content_safe(ctx, message, &ContentSafeOptions::default().display_as_member_from(gid)).await;
+        let message = MessageBuilder::new().push_codeblock_safe(message, None).build();
         orig.reply(ctx, message).await?;
         Ok(())
     }

@@ -11,12 +11,14 @@ struct ExampleEnv;
 /// Creates a subcommand for creating an example configuration file for Glimbot.
 pub fn subcommand() -> clap::App<'static, 'static> {
     clap::SubCommand::with_name("make-config")
-        .arg(clap::Arg::with_name("output-file")
-            .value_name("FILE")
-            .default_value("./default.env")
-            .help("The destination to write the dotenv file to.")
-            .takes_value(true)
-            .index(1))
+        .arg(
+            clap::Arg::with_name("output-file")
+                .value_name("FILE")
+                .default_value("./default.env")
+                .help("The destination to write the dotenv file to.")
+                .takes_value(true)
+                .index(1),
+        )
         .about("Create a config file with placeholders to fill for a working dotenv file.")
 }
 

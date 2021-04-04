@@ -15,14 +15,14 @@ use num::ToPrimitive;
 #[derive(Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct ConstrainedU64<const MIN: u64, const MAX: u64> {
     /// The contained value.
-    val: u64
+    val: u64,
 }
 
 /// Represents a constraint failure, usually generated during parsing.
 #[derive(Debug)]
 pub struct ConstraintFailureU64<const MIN: u64, const MAX: u64> {
     /// The value which violated the type constraint.
-    val: u64
+    val: u64,
 }
 
 impl<const MIN: u64, const MAX: u64> ConstraintFailureU64<MIN, MAX> {
@@ -79,14 +79,14 @@ pub type AtMostU64<const MAX: u64> = ConstrainedU64<{ u64::MIN }, MAX>;
 #[derive(Debug, Default, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct ConstrainedI64<const MIN: i64, const MAX: i64> {
     /// The contained value.
-    val: i64
+    val: i64,
 }
 
 /// See [`ConstraintFailureU64`]. This variation is for signed integers.
 #[derive(Debug)]
 pub struct ConstraintFailureI64<const MIN: i64, const MAX: i64> {
     /// The value which violated the constraint.
-    val: i64
+    val: i64,
 }
 
 impl<const MIN: i64, const MAX: i64> ConstraintFailureI64<MIN, MAX> {

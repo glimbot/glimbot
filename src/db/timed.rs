@@ -91,9 +91,9 @@ impl ActionFailure {
     /// Returns a constant string describing what type of action failed.
     pub const fn failure_message(&self) -> &str {
         match self.action.kind {
-            ActionKind::Ban => { "could not unban" }
-            ActionKind::Mute => { "could not unmute" }
-            ActionKind::Debug => { "could not print debug statement" }
+            ActionKind::Ban => "could not unban",
+            ActionKind::Mute => "could not unmute",
+            ActionKind::Debug => "could not print debug statement",
         }
     }
 
@@ -103,12 +103,8 @@ impl ActionFailure {
             FailureKind::UserNotInGuild => {
                 format!("user {} is not a member of this guild", self.action.target_user).into()
             }
-            FailureKind::NoMuteRole => {
-                "guild doesn't have a mute role set".into()
-            }
-            FailureKind::SysError(s) => {
-                Cow::Borrowed(s)
-            }
+            FailureKind::NoMuteRole => "guild doesn't have a mute role set".into(),
+            FailureKind::SysError(s) => Cow::Borrowed(s),
         }
     }
 }
@@ -128,12 +124,8 @@ impl Action {
     pub async fn act(&self, dis: &Dispatch, ctx: &Context) -> crate::error::Result<()> {
         let db = dis.db(self.guild);
         let res: Result<(), ActionFailure> = match self.kind {
-            ActionKind::Ban => {
-                self.do_unban(ctx).await
-            }
-            ActionKind::Mute => {
-                self.do_unmute(dis, db.clone(), ctx).await
-            }
+            ActionKind::Ban => self.do_unban(ctx).await,
+            ActionKind::Mute => self.do_unmute(dis, db.clone(), ctx).await,
             ActionKind::Debug => {
                 debug!("Got debug action: {:?}", self);
                 Ok(())
@@ -144,7 +136,6 @@ impl Action {
             warn!("{}", e);
         }
 
-
         let t = TimedEvents::new(db);
         t.drop_action(self).await?;
         Ok(())
@@ -152,16 +143,24 @@ impl Action {
 
     /// Unmutes a user in a guild.
     #[instrument(level = "debug", skip(self, dis, db, ctx))]
-    async fn do_unmute<'me, 'dis, 'a>(&'me self, dis: &'dis Dispatch, db: DbContext<'dis>, ctx: &'a Context) -> Result<(), ActionFailure> {
-        let mute_role = dis.config_value_t::<VerifiedRole>(crate::module::moderation::MUTE_ROLE)
+    async fn do_unmute<'me, 'dis, 'a>(
+        &'me self,
+        dis: &'dis Dispatch,
+        db: DbContext<'dis>,
+        ctx: &'a Context,
+    ) -> Result<(), ActionFailure> {
+        let mute_role = dis
+            .config_value_t::<VerifiedRole>(crate::module::moderation::MUTE_ROLE)
             .unwrap()
             .get(&db)
-            .await.map_err(|e| {
-            ActionFailure::from_err(*self, e)
-        })?
+            .await
+            .map_err(|e| ActionFailure::from_err(*self, e))?
             .ok_or_else(|| ActionFailure::from_err(*self, NoMuteRoleSet))?;
 
-        let mut mem = self.guild.member(ctx, self.target_user).await
+        let mut mem = self
+            .guild
+            .member(ctx, self.target_user)
+            .await
             .map_err(|_| ActionFailure::new(*self, FailureKind::UserNotInGuild))?;
 
         if mem.roles.contains(&mute_role.into_inner()) {
@@ -179,7 +178,8 @@ impl Action {
     /// Unbans a user in a guild.
     #[instrument(level = "debug", skip(self, ctx))]
     async fn do_unban(&self, ctx: &Context) -> Result<(), ActionFailure> {
-        self.guild.unban(ctx, self.target_user)
+        self.guild
+            .unban(ctx, self.target_user)
             .await
             .map_err(|e| ActionFailure::from_err(*self, e))?;
         Ok(())
@@ -210,7 +210,7 @@ struct Row {
 #[derive(Clone)]
 pub struct TimedEvents<'pool> {
     /// The wrapped database context.
-    context: DbContext<'pool>
+    context: DbContext<'pool>,
 }
 
 impl<'pool> TimedEvents<'pool> {
@@ -232,8 +232,9 @@ impl<'pool> TimedEvents<'pool> {
             self.context.guild_as_i64(),
             action.kind.to_json(),
             action.expiry.clone()
-        ).execute(self.context.conn())
-            .await?;
+        )
+        .execute(self.context.conn())
+        .await?;
         Ok(())
     }
 
@@ -250,14 +251,14 @@ impl<'pool> TimedEvents<'pool> {
             self.context.guild_as_i64(),
             action.kind.to_json(),
             action.expiry.clone()
-        ).execute(self.context.conn())
-            .await?;
+        )
+        .execute(self.context.conn())
+        .await?;
         Ok(())
     }
 
     /// Retrieves the actions before the specified epoch, limited by `BATCH_LIMIT`.
     pub async fn get_actions_before(pool: &PgPool, epoch: chrono::DateTime<Utc>) -> crate::error::Result<Vec<Action>> {
-
         let q: sqlx::query::Map<_, _, _> = sqlx::query_as!(
             Row,
             r#"
@@ -268,17 +269,18 @@ impl<'pool> TimedEvents<'pool> {
         );
 
         q.try_map(|r: Row| {
-            Ok(Action::new((r.target_user as u64).into(),
-                           (r.guild as u64).into(),
-                           serde_json::from_value(r.action)
-                               .map_err(|e| sqlx::Error::Decode(e.into()))?,
-                           r.expiry))
-        }).fetch_all(pool)
-            .await
-            .map_err(crate::error::Error::from)
+            Ok(Action::new(
+                (r.target_user as u64).into(),
+                (r.guild as u64).into(),
+                serde_json::from_value(r.action).map_err(|e| sqlx::Error::Decode(e.into()))?,
+                r.expiry,
+            ))
+        })
+        .fetch_all(pool)
+        .await
+        .map_err(crate::error::Error::from)
     }
 }
-
 
 impl Action {
     /// Creates an action.
@@ -292,14 +294,16 @@ impl Action {
     }
 
     /// Creates an action, setting the expiry to `now()` + the duration.
-    pub fn with_duration(user: UserId, guild: GuildId, action: ActionKind, duration: impl Into<chrono::Duration>) -> Self {
-        let expiry = chrono::DateTime::<Utc>::from(chrono::Local::now()).checked_add_signed(duration.into().clamp(*ONE_MINUTE, *ONE_HUNDREDISH_YEARS)).unwrap();
-        Self::new(
-            user,
-            guild,
-            action,
-            expiry,
-        )
+    pub fn with_duration(
+        user: UserId,
+        guild: GuildId,
+        action: ActionKind,
+        duration: impl Into<chrono::Duration>,
+    ) -> Self {
+        let expiry = chrono::DateTime::<Utc>::from(chrono::Local::now())
+            .checked_add_signed(duration.into().clamp(*ONE_MINUTE, *ONE_HUNDREDISH_YEARS))
+            .unwrap();
+        Self::new(user, guild, action, expiry)
     }
 
     /// Creates an action to remove a ban from a user.
