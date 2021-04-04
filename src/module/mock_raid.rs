@@ -1,28 +1,26 @@
 //! Module to mock a raid in a server; for dev purposes.
 
-use crate::module::{Module, UnimplementedModule, ModInfo, Sensitivity};
+use crate::module::{ModInfo, Module, Sensitivity};
 use serenity::client::Context;
 use serenity::model::channel::Message;
 
-use crate::dispatch::{Dispatch, ArcDispatch};
+use crate::dispatch::Dispatch;
 use once_cell::sync::Lazy;
-use std::sync::{Weak, Arc};
-use arc_swap::{ArcSwap, ArcSwapOption, ArcSwapWeak};
-use crate::util::ClapExt;
+
+use crate::error::{DeputyConfused, GuildNotInCache};
 use crate::util::constraints::ConstrainedU64;
-use crate::error::{GuildNotInCache, DeputyConfused};
+use crate::util::ClapExt;
 use serenity::model::prelude::UserId;
-use regex::Regex;
-use serenity::model::guild::{Guild, PartialMember};
-use rand::{thread_rng, Rng};
+
 use rand::prelude::IteratorRandom;
-use serenity::builder::CreateMessage;
+use rand::{thread_rng, Rng};
+use serenity::model::guild::Guild;
+
 use futures::StreamExt;
-use tracing::Instrument;
-use serenity::prelude::EventHandler;
-use num::ToPrimitive;
-use tracing::field::DisplayValue;
 use itertools::Itertools;
+use num::ToPrimitive;
+use serenity::prelude::EventHandler;
+use tracing::Instrument;
 
 #[derive(Default)]
 pub struct MockRaidModule {}
@@ -32,20 +30,21 @@ pub struct MockRaidModule {}
 struct MockRaidOpt {
     /// The number of messages to be send during the raid.
     #[structopt(default_value = "65536")]
-    size: ConstrainedU64<1, {1024 * 1024}>,
+    size: ConstrainedU64<1, { 1024 * 1024 }>,
     /// The number of threads to use for the raid.
     #[structopt(default_value = "4")]
     threads: ConstrainedU64<1, 64>,
     /// If set, will actually do the raid.
     #[structopt(short, long)]
-    start: bool
+    start: bool,
 }
 
-impl MockRaidModule {
-}
+impl MockRaidModule {}
 
 static CORPUS: Lazy<Vec<&'static str>> = Lazy::new(|| {
-    crate::about::LICENSE_HEADER.split_inclusive(char::is_whitespace).collect()
+    crate::about::LICENSE_HEADER
+        .split_inclusive(char::is_whitespace)
+        .collect()
 });
 
 struct MockMessageContext {
@@ -56,7 +55,6 @@ struct MockMessageContext {
 
 impl MockMessageContext {
     pub fn new(g: &Guild, model: &Message) -> Self {
-
         let mut m = model.clone();
         m.content.clear();
         m.mention_everyone = false;
@@ -69,7 +67,7 @@ impl MockMessageContext {
         Self {
             guild: g.clone(),
             members: g.members.keys().cloned().collect(),
-            model: m
+            model: m,
         }
     }
 
@@ -110,7 +108,13 @@ impl Module for MockRaidModule {
         &INFO
     }
 
-    async fn process(&self, dis: &Dispatch, ctx: &Context, orig: &Message, command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(
+        &self,
+        dis: &Dispatch,
+        ctx: &Context,
+        orig: &Message,
+        command: Vec<String>,
+    ) -> crate::error::Result<()> {
         let g = orig.guild(ctx).await.ok_or(GuildNotInCache)?;
         // This should only be run in a guild the bot owner owns.
         if orig.author.id != g.owner_id {
@@ -119,14 +123,19 @@ impl Module for MockRaidModule {
         let opts = MockRaidOpt::from_iter_with_help(command)?;
 
         if !opts.start {
-            info!("would have started the raid with {:?}, but start was not started.", opts);
+            info!(
+                "would have started the raid with {:?}, but start was not started.",
+                opts
+            );
             return Ok(());
         }
 
         let mmc = MockMessageContext::new(&g, orig);
 
         info!("pregenerating messages...");
-        let gen = (0..opts.size.to_usize().unwrap()).map(|i| (i, mmc.gen_message())).collect_vec();
+        let gen = (0..opts.size.to_usize().unwrap())
+            .map(|i| (i, mmc.gen_message()))
+            .collect_vec();
         info!("done");
 
         let start = std::time::Instant::now();
@@ -134,11 +143,11 @@ impl Module for MockRaidModule {
             .for_each_concurrent(opts.threads.to_usize().unwrap(), |(i, m)| {
                 dis.message(ctx.clone(), m)
                     .instrument(info_span!("mock raid message", idx = i))
-
             })
             .await;
         let e = start.elapsed();
-        info!("raid used {thd_cnt} threads and processed {msg_cnt} messages over {display:?}, rate was {rate} msg/s",
+        info!(
+            "raid used {thd_cnt} threads and processed {msg_cnt} messages over {display:?}, rate was {rate} msg/s",
             thd_cnt = opts.threads,
             msg_cnt = opts.size,
             display = e,
@@ -146,6 +155,5 @@ impl Module for MockRaidModule {
         );
 
         Ok(())
-
     }
 }

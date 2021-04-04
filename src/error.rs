@@ -24,7 +24,7 @@ pub struct Error {
     /// The wrapped error.
     err: Box<dyn StdErr + Send>,
     /// Whether or not this error should be displayed directly to users.
-    user_error: bool
+    user_error: bool,
 }
 
 impl Error {
@@ -33,7 +33,10 @@ impl Error {
         if !user_error {
             error!("{}", &e);
         }
-        Self { err: Box::new(e), user_error }
+        Self {
+            err: Box::new(e),
+            user_error,
+        }
     }
 
     /// Returns true if this error should be displayed directly to users.
@@ -62,7 +65,7 @@ impl StdErr for Error {}
 #[derive(Debug)]
 pub struct UserError {
     /// Info string to display to the user.
-    info: String
+    info: String,
 }
 
 impl UserError {
@@ -83,7 +86,7 @@ impl fmt::Display for UserError {
 #[derive(Debug)]
 pub struct SysError {
     /// Info string to display in the logs
-    info: String
+    info: String,
 }
 
 impl SysError {
@@ -126,7 +129,10 @@ pub trait IntoBotErr<T>: Sized {
     fn into_sys_err(self) -> Result<T>;
 }
 
-impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'static {
+impl<T, E> IntoBotErr<T> for StdRes<T, E>
+where
+    E: StdErr + Send + Sized + 'static,
+{
     fn into_user_err(self) -> Result<T> {
         self.map_err(|e| Error::from_err(e, true))
     }
@@ -138,13 +144,11 @@ impl <T, E> IntoBotErr<T> for StdRes<T, E> where E: StdErr + Send + Sized + 'sta
 impl From<serenity::Error> for Error {
     fn from(e: serenity::Error) -> Self {
         match e {
-            serenity::Error::Model(me) => {
-                match me {
-                    serenity::model::ModelError::MessageTooLong(_) => {Self::from_err(me, false)}
-                    me => Self::from_err(me, true)
-                }
-            }
-            e => Self::from_err(e, false)
+            serenity::Error::Model(me) => match me {
+                serenity::model::ModelError::MessageTooLong(_) => Self::from_err(me, false),
+                me => Self::from_err(me, true),
+            },
+            e => Self::from_err(e, false),
         }
     }
 }
@@ -221,7 +225,11 @@ macro_rules! impl_err {
 
 impl_err!(GuildNotInCache, "Couldn't find guild in cache.", false);
 impl_err!(RoleNotInCache, "Couldn't find role in cache.", false);
-impl_err!(InsufficientPermissions, "You do not have the permissions to run this command.", true);
+impl_err!(
+    InsufficientPermissions,
+    "You do not have the permissions to run this command.",
+    true
+);
 impl_err!(DeputyConfused, "Performing that action would confuse the deputy. See https://en.wikipedia.org/wiki/Confused_deputy_problem for an explanation.", true);
 
 /// Extension trait for [`sqlx::Error`]
@@ -241,12 +249,8 @@ pub trait DatabaseError {
 impl DatabaseError for sqlx::Error {
     fn constraint(&self) -> Option<&str> {
         match self {
-            sqlx::Error::Database(d) => {
-                d.constraint()
-            }
-            _ => {
-                None
-            }
+            sqlx::Error::Database(d) => d.constraint(),
+            _ => None,
         }
     }
 
@@ -264,12 +268,8 @@ impl DatabaseError for sqlx::Error {
 
     fn sqlstate(&self) -> Option<Cow<'_, str>> {
         match self {
-            sqlx::Error::Database(d) => {
-                d.code()
-            }
-            _ => {
-                None
-            }
+            sqlx::Error::Database(d) => d.code(),
+            _ => None,
         }
     }
 }

@@ -11,17 +11,17 @@ use serenity::model::channel::Message;
 
 use crate::dispatch::{config, Dispatch};
 
-pub mod status;
-pub mod owner;
 pub mod base_filter;
-pub mod shutdown;
-pub mod privilege;
 pub mod conf;
-pub mod roles;
-pub mod moderation;
-pub mod spam;
-pub mod mock_raid;
 pub mod info;
+pub mod mock_raid;
+pub mod moderation;
+pub mod owner;
+pub mod privilege;
+pub mod roles;
+pub mod shutdown;
+pub mod spam;
+pub mod status;
 
 pub const CHECKMARK_IN_GREEN_BOX: char = '✅';
 
@@ -45,23 +45,24 @@ impl PartialOrd for Sensitivity {
             (x, y) if x == y => Some(Ordering::Equal),
             (Self::Owner, _) | (_, Self::Owner) => None,
             (Self::High, o) => match o {
-                Sensitivity::Low |
-                Sensitivity::Medium => { Ordering::Greater }
-                Sensitivity::High => { Ordering::Equal }
-                _ => unreachable!()
-            }.into(),
+                Sensitivity::Low | Sensitivity::Medium => Ordering::Greater,
+                Sensitivity::High => Ordering::Equal,
+                _ => unreachable!(),
+            }
+            .into(),
             (Self::Medium, o) => match o {
                 Sensitivity::Low => Ordering::Greater,
                 Sensitivity::Medium => Ordering::Equal,
                 Sensitivity::High => Ordering::Less,
-                _ => unreachable!()
-            }.into(),
+                _ => unreachable!(),
+            }
+            .into(),
             (Self::Low, o) => match o {
-                Sensitivity::Low => { Ordering::Equal }
-                Sensitivity::Medium |
-                Sensitivity::High => { Ordering::Less }
-                _ => unreachable!()
-            }.into()
+                Sensitivity::Low => Ordering::Equal,
+                Sensitivity::Medium | Sensitivity::High => Ordering::Less,
+                _ => unreachable!(),
+            }
+            .into(),
         }
     }
 }
@@ -69,10 +70,10 @@ impl PartialOrd for Sensitivity {
 impl fmt::Display for Sensitivity {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Sensitivity::Low => { "low" }
-            Sensitivity::Medium => { "medium" }
-            Sensitivity::High => { "high" }
-            Sensitivity::Owner => { "owner" }
+            Sensitivity::Low => "low",
+            Sensitivity::Medium => "medium",
+            Sensitivity::High => "high",
+            Sensitivity::Owner => "owner",
         };
         f.write_str(s)
     }
@@ -110,7 +111,7 @@ impl ModInfo {
             config_values: Vec::new(),
             on_tick: false,
             on_message: false,
-            short_desc: desc
+            short_desc: desc,
         }
     }
 
@@ -164,12 +165,24 @@ pub trait Module: Sync + Send {
     /// to be invoked.
     ///
     /// If the command should not be invoked, this command should return an error.
-    async fn filter(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(
+        &self,
+        _dis: &Dispatch,
+        _ctx: &Context,
+        _orig: &Message,
+        name: String,
+    ) -> crate::error::Result<String> {
         Ok(name)
     }
 
     /// Processes a command.
-    async fn process(&self, _dis: &Dispatch, _ctx: &Context, _orig: &Message, _command: Vec<String>) -> crate::error::Result<()> {
+    async fn process(
+        &self,
+        _dis: &Dispatch,
+        _ctx: &Context,
+        _orig: &Message,
+        _command: Vec<String>,
+    ) -> crate::error::Result<()> {
         Err(UnimplementedModule.into())
     }
 
@@ -183,4 +196,3 @@ pub trait Module: Sync + Send {
         Err(UnimplementedModule.into())
     }
 }
-

@@ -9,3 +9,4 @@ src/glimbot/schema.rs
 *.sqlite3*
 test/
 db.env
+.vscode/

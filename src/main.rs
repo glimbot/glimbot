@@ -18,8 +18,8 @@ extern crate tracing;
 use clap::{AppSettings, SubCommand};
 #[cfg(target_env = "gnu")]
 use jemallocator::Jemalloc;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use std::panic::PanicInfo;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[doc(hidden)]
 #[cfg(target_env = "gnu")]
@@ -32,7 +32,7 @@ fn main() -> glimbot::error::Result<()> {
     better_panic::install();
 
     let pre_hook = std::panic::take_hook();
-    let hook =  move |p: &PanicInfo<'_>| {
+    let hook = move |p: &PanicInfo<'_>| {
         if let Err(e) = glimbot::run::PANIC_ALERT_CHANNEL.0.send(()) {
             error!("Unable to alert panic watchdog of failure because {}. Aborting...", e);
             std::process::abort();
@@ -58,9 +58,7 @@ const BIN_NAME: &str = env!("CARGO_BIN_NAME");
 async fn async_main() -> glimbot::error::Result<()> {
     let _ = dotenv::dotenv()?;
     let sub = FmtSubscriber::builder()
-        .with_env_filter(
-            EnvFilter::from_env("GLIMBOT_LOG")
-        )
+        .with_env_filter(EnvFilter::from_env("GLIMBOT_LOG"))
         .finish();
 
     tracing::subscriber::set_global_default(sub)?;
@@ -68,16 +66,10 @@ async fn async_main() -> glimbot::error::Result<()> {
         .version(about::VERSION)
         .about(about::LICENSE_HEADER)
         .author(about::AUTHOR_NAME)
-        .subcommand(
-            SubCommand::with_name("run")
-                .about("Starts Glimbot.")
-        )
-        .subcommand(
-            glimbot::example::subcommand()
-        )
+        .subcommand(SubCommand::with_name("run").about("Starts Glimbot."))
+        .subcommand(glimbot::example::subcommand())
         .setting(AppSettings::SubcommandRequired)
-        .get_matches()
-        ;
+        .get_matches();
 
     match matches.subcommand() {
         ("run", _) => {
@@ -87,7 +79,7 @@ async fn async_main() -> glimbot::error::Result<()> {
         ("make-config", Some(m)) => {
             glimbot::example::handle_matches(m).await?;
         }
-        _ => unreachable!("Unrecognized command; we should have errored out already.")
+        _ => unreachable!("Unrecognized command; we should have errored out already."),
     }
     Ok(())
 }

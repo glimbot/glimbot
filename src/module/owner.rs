@@ -1,10 +1,6 @@
 //! Contains the owner filter, which ensures that commands with Sensitivity::Owner are only
 //! run by the owner of the bot.
 
-
-
-
-
 use once_cell::sync::Lazy;
 use serenity::client::Context;
 use serenity::model::channel::Message;
@@ -22,8 +18,11 @@ static MOD_INFO: Lazy<ModInfo> = Lazy::new(|| {
 /// Ensures that commands with owner sensitivity are run only by the owner of the bot.
 pub struct OwnerFilter;
 
-impl_err!(MustBeBotOwner, "You must be the bot owner to do the specified command.", true);
-
+impl_err!(
+    MustBeBotOwner,
+    "You must be the bot owner to do the specified command.",
+    true
+);
 
 #[async_trait::async_trait]
 impl Module for OwnerFilter {
@@ -31,7 +30,13 @@ impl Module for OwnerFilter {
         &MOD_INFO
     }
 
-    async fn filter(&self, dis: &Dispatch, _ctx: &Context, orig: &Message, name: String) -> crate::error::Result<String> {
+    async fn filter(
+        &self,
+        dis: &Dispatch,
+        _ctx: &Context,
+        orig: &Message,
+        name: String,
+    ) -> crate::error::Result<String> {
         let cmd = name.as_str();
         let mod_info = dis.command_module(cmd)?;
         if mod_info.info().sensitivity == Sensitivity::Owner {

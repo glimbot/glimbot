@@ -7,8 +7,8 @@ use structopt::StructOpt;
 use crate::error::{IntoBotErr, UserError};
 use noisy_float::types::R64;
 
-pub mod constraints;
 pub mod clock;
+pub mod constraints;
 pub mod ordset;
 
 /// An extension trait to allow for extraction of the help string from command invocations,
@@ -16,8 +16,11 @@ pub mod ordset;
 pub trait ClapExt: StructOpt + Sized {
     /// Extracts help text and converts errors into Glimbot errors. Additionally strips
     /// ANSI escapes from the help text.
-    fn from_iter_with_help<I>(i: I) -> crate::error::Result<Self> where I: IntoIterator,
-                                      I::Item: Into<OsString> + Clone {
+    fn from_iter_with_help<I>(i: I) -> crate::error::Result<Self>
+    where
+        I: IntoIterator,
+        I::Item: Into<OsString> + Clone,
+    {
         let opts = Self::from_iter_safe(i);
         match opts {
             Err(e) => {
@@ -26,14 +29,13 @@ pub trait ClapExt: StructOpt + Sized {
                 let b = String::from_utf8_lossy(&escaped);
                 #[allow(deprecated)]
                 Err(UserError::new(b).into())
-            },
-            Ok(s) => Ok(s)
+            }
+            Ok(s) => Ok(s),
         }
     }
 }
 
 impl<T> ClapExt for T where T: StructOpt + Sized {}
-
 
 pub trait CoalesceResultExt<T>: Sized {
     fn coalesce(self) -> T;
@@ -42,8 +44,8 @@ pub trait CoalesceResultExt<T>: Sized {
 impl<T> CoalesceResultExt<T> for Result<T, T> {
     fn coalesce(self) -> T {
         match self {
-            Ok(v) => {v}
-            Err(v) => {v}
+            Ok(v) => v,
+            Err(v) => v,
         }
     }
 }
@@ -52,8 +54,7 @@ impl_err!(NeedNonNegativeFloat, "expected a non-negative real number", true);
 
 pub fn parse_nonnegative_real(s: &str) -> crate::error::Result<R64> {
     let f = s.parse::<f64>()?;
-    let r = R64::try_new(f)
-        .ok_or(NeedNonNegativeFloat)?;
+    let r = R64::try_new(f).ok_or(NeedNonNegativeFloat)?;
 
     if r < 0.0 {
         Err(NeedNonNegativeFloat.into())

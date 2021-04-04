@@ -8,14 +8,20 @@ use once_cell::sync::Lazy;
 use tokio::sync::broadcast;
 
 /// Channel for threads to alert Glimbot that it's panicked.
-pub static PANIC_ALERT_CHANNEL: Lazy<(broadcast::Sender<()>, broadcast::Receiver<()>)> = Lazy::new(|| broadcast::channel(100));
+pub static PANIC_ALERT_CHANNEL: Lazy<(broadcast::Sender<()>, broadcast::Receiver<()>)> =
+    Lazy::new(|| broadcast::channel(100));
 
 /// Starts Glimbot.
 /// This is where modules are loaded.
 pub async fn start_bot() -> crate::error::Result<()> {
-
     let pool = crate::db::create_pool().await?;
-    let mut dispatch = crate::dispatch::Dispatch::new(std::env::var("GLIMBOT_OWNER").expect("Couldn't find owner information.").parse().expect("Invalid owner token."), pool);
+    let mut dispatch = crate::dispatch::Dispatch::new(
+        std::env::var("GLIMBOT_OWNER")
+            .expect("Couldn't find owner information.")
+            .parse()
+            .expect("Invalid owner token."),
+        pool,
+    );
     dispatch.add_module(crate::module::base_filter::BaseFilter);
     dispatch.add_module(crate::module::owner::OwnerFilter);
     dispatch.add_module(crate::module::privilege::PrivilegeFilter);
@@ -32,7 +38,13 @@ pub async fn start_bot() -> crate::error::Result<()> {
     let dispatch = ArcDispatch::from(dispatch);
 
     let mut client = serenity::Client::builder(std::env::var("GLIMBOT_TOKEN").expect("Didn't find a token."))
-        .intents(GatewayIntents::privileged() | GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILD_BANS | GatewayIntents::GUILDS | GatewayIntents::DIRECT_MESSAGES)
+        .intents(
+            GatewayIntents::privileged()
+                | GatewayIntents::GUILD_MESSAGES
+                | GatewayIntents::GUILD_BANS
+                | GatewayIntents::GUILDS
+                | GatewayIntents::DIRECT_MESSAGES,
+        )
         .event_handler(dispatch)
         .await?;
 

@@ -5,8 +5,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use downcast_rs::DowncastSync;
 use downcast_rs::impl_downcast;
+use downcast_rs::DowncastSync;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serenity::client::Context;
@@ -17,15 +17,18 @@ use serenity::model::misc::Mentionable;
 use crate::db::DbContext;
 use crate::error::{GuildNotInCache, IntoBotErr};
 use std::sync::Arc;
-use crate::util::CoalesceResultExt;
-use std::borrow::Cow;
 
 /// A trait specifying that a type can be set as a value.
-pub trait ValueType: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone {}
+pub trait ValueType:
+    Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone
+{
+}
 
 /// Represents a config value, allowing for enforcement of type issues.
 pub struct Value<T>
-    where T: ValueType {
+where
+    T: ValueType,
+{
     /// The name of the config value.
     name: &'static str,
     /// An about description for the config value.
@@ -34,28 +37,47 @@ pub struct Value<T>
     default: Option<Box<dyn Fn() -> T + Send + Sync>>,
 }
 
-impl<T> fmt::Debug for Value<T> where T: ValueType {
+impl<T> fmt::Debug for Value<T>
+where
+    T: ValueType,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct(&format!("Value<{}>", std::any::type_name::<T>()))
             .field("name", &self.name as &dyn fmt::Debug)
             .field("help", &self.help as &dyn fmt::Debug)
-            .field("default", &self.default.as_ref().map(|_| "present").unwrap_or("not present") as &dyn fmt::Debug)
+            .field(
+                "default",
+                &self.default.as_ref().map(|_| "present").unwrap_or("not present") as &dyn fmt::Debug,
+            )
             .finish()
     }
 }
 
-impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone> ValueType for T {}
+impl<T: Serialize + DeserializeOwned + FromStrWithCtx + Send + Sync + Any + Sized + fmt::Display + Clone> ValueType
+    for T
+{
+}
 
 impl_err!(NoDefaultSpecified, "No default is specified for that value.", true);
 
-impl<T> Value<T> where T: ValueType {
+impl<T> Value<T>
+where
+    T: ValueType,
+{
     /// Creates a value with the given name and help, without support for get_or_default.
     pub fn new(name: &'static str, help: &'static str) -> Self {
-        Value { name, help, default: None }
+        Value {
+            name,
+            help,
+            default: None,
+        }
     }
 
     /// Creates a value with the given name and help, and with the specified default.
-    pub fn with_default<F>(name: &'static str, help: &'static str, default: F) -> Self where F: Fn() -> T + Send + Sync + 'static {
+    pub fn with_default<F>(name: &'static str, help: &'static str, default: F) -> Self
+    where
+        F: Fn() -> T + Send + Sync + 'static,
+    {
         let mut out = Self::new(name, help);
         out.default = Some(Box::new(default));
         out
@@ -63,7 +85,10 @@ impl<T> Value<T> where T: ValueType {
 
     /// Retrieves the value associated with this value's name, setting it atomically if it doesn't
     /// exist.
-    pub async fn get_or_insert_with<F>(&self, ctx: &DbContext<'_>, def: F) -> crate::error::Result<Arc<T>> where F: Fn() -> T + Send + Sync {
+    pub async fn get_or_insert_with<F>(&self, ctx: &DbContext<'_>, def: F) -> crate::error::Result<Arc<T>>
+    where
+        F: Fn() -> T + Send + Sync,
+    {
         ctx.get_or_insert_with(self.name, def).await
     }
 
@@ -99,7 +124,11 @@ pub trait FromStrWithCtx: Sized {
 }
 
 #[async_trait::async_trait]
-impl<T> FromStrWithCtx for T where T: FromStr, T::Err: std::error::Error + Send + Sized + 'static {
+impl<T> FromStrWithCtx for T
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sized + 'static,
+{
     type Err = <T as FromStr>::Err;
 
     async fn from_str_with_ctx(s: &str, _ctx: &Context, _gid: GuildId) -> Result<Self, Self::Err> {
@@ -142,7 +171,10 @@ pub trait Validator: Send + Sync + Any + DowncastSync + 'static {
 impl_downcast!(sync Validator);
 
 #[async_trait::async_trait]
-impl<T> Validator for Value<T> where T: ValueType {
+impl<T> Validator for Value<T>
+where
+    T: ValueType,
+{
     fn name(&self) -> &'static str {
         self.name
     }
@@ -183,11 +215,11 @@ impl VerifiedRole {
     }
     /// Converts the internal value into an i64, mostly for use with SQL DBs.
     pub fn to_i64(&self) -> i64 {
-        self.0.0 as i64
+        self.0 .0 as i64
     }
     /// Converts the internal value into its big-endian representation.
     pub fn into_be_bytes(self) -> [u8; 8] {
-        self.0.0.to_be_bytes()
+        self.0 .0.to_be_bytes()
     }
 }
 
@@ -211,9 +243,7 @@ impl RoleExt for RoleId {
     }
 
     async fn to_role_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
-        self.to_role_name(ctx, guild)
-            .await
-            .unwrap_or_else(|_| self.to_string())
+        self.to_role_name(ctx, guild).await.unwrap_or_else(|_| self.to_string())
     }
 }
 
@@ -224,14 +254,13 @@ impl FromStrWithCtx for VerifiedRole {
     type Err = crate::error::Error;
 
     async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
-        let guild_info = gid.to_guild_cached(ctx)
-            .await
-            .ok_or(GuildNotInCache)?;
+        let guild_info = gid.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
         let role_id = if let Ok(id) = RoleId::from_str(s) {
             guild_info.roles.get(&id)
         } else {
             guild_info.role_by_name(s)
-        }.ok_or(NoSuchRole)?;
+        }
+        .ok_or(NoSuchRole)?;
 
         Ok(Self(role_id.id))
     }
@@ -258,14 +287,13 @@ impl FromStrWithCtx for VerifiedChannel {
     type Err = crate::error::Error;
 
     async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
-        let guild_info = gid.to_guild_cached(ctx)
-            .await
-            .ok_or(GuildNotInCache)?;
+        let guild_info = gid.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
         let chan_id = if let Ok(id) = ChannelId::from_str(s) {
             guild_info.channels.get(&id).map(|c| c.id)
         } else {
             guild_info.channel_id_from_name(ctx, s).await
-        }.ok_or(NoSuchChannel)?;
+        }
+        .ok_or(NoSuchChannel)?;
 
         Ok(Self(chan_id))
     }
@@ -288,10 +316,8 @@ impl VerifiedChannel {
     /// Converts this channel into the text name, returning an error if it can't.
     pub async fn to_channel_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let cid = self.into_inner();
-        let g = guild.to_guild_cached(ctx).await
-            .ok_or(GuildNotInCache)?;
-        let role = g.channels.get(&cid)
-            .ok_or(NoSuchChannel)?;
+        let g = guild.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
+        let role = g.channels.get(&cid).ok_or(NoSuchChannel)?;
         Ok(role.name.clone())
     }
 
@@ -322,38 +348,35 @@ impl VerifiedUser {
     /// Converts this user into the text name.
     pub async fn to_user_name(&self, ctx: &Context, guild: GuildId) -> crate::error::Result<String> {
         let uid = self.into_inner();
-        let g = guild.to_guild_cached(ctx).await
-            .ok_or(GuildNotInCache)?;
-        let member = g.members.get(&uid)
-            .ok_or(NoSuchUser)?;
+        let g = guild.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
+        let member = g.members.get(&uid).ok_or(NoSuchUser)?;
         Ok(member.nick.clone().unwrap_or_else(|| member.user.name.clone()))
     }
 
     /// Converts this user into the text name, or the raw id if it can't.
     pub async fn to_user_name_or_id(&self, ctx: &Context, guild: GuildId) -> String {
-        self.to_user_name(ctx, guild)
-            .await
-            .unwrap_or_else(|_| self.to_string())
+        self.to_user_name(ctx, guild).await.unwrap_or_else(|_| self.to_string())
     }
 }
 
-impl_err!(NoSuchUser, "No such user in guild, or two members have the same nickname.", true);
+impl_err!(
+    NoSuchUser,
+    "No such user in guild, or two members have the same nickname.",
+    true
+);
 
 #[async_trait::async_trait]
 impl FromStrWithCtx for VerifiedUser {
     type Err = crate::error::Error;
 
     async fn from_str_with_ctx(s: &str, ctx: &Context, gid: GuildId) -> Result<Self, Self::Err> {
-        let guild = gid.to_guild_cached(ctx)
-            .await
-            .ok_or(GuildNotInCache)?;
+        let guild = gid.to_guild_cached(ctx).await.ok_or(GuildNotInCache)?;
         let uid: Member = if let Ok(id) = UserId::from_str(s) {
-            guild.member(ctx, id)
-                .await
-                .ok()
+            guild.member(ctx, id).await.ok()
         } else {
             guild.member_named(s).cloned()
-        }.ok_or(NoSuchUser)?;
+        }
+        .ok_or(NoSuchUser)?;
 
         Ok(VerifiedUser(uid.user.id))
     }

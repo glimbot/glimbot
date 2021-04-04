@@ -1,26 +1,29 @@
-use std::fmt;
-use std::fmt::Formatter;
-use parking_lot::RwLock;
-use parking_lot::lock_api::RwLockUpgradableReadGuard;
 use crate::util::CoalesceResultExt;
 use itertools::Itertools;
+use parking_lot::lock_api::RwLockUpgradableReadGuard;
+use parking_lot::RwLock;
 use std::borrow::Borrow;
-use std::num::NonZeroUsize;
+use std::fmt;
+use std::fmt::Formatter;
 use std::iter::FromIterator;
+use std::num::NonZeroUsize;
 
 #[derive(shrinkwraprs::Shrinkwrap, Clone)]
 #[shrinkwrap(mutable)]
 struct FixedSizedInner<T> {
-    #[shrinkwrap(main_field)] inner: im::Vector<T>,
-    size_bound: Option<NonZeroUsize>
+    #[shrinkwrap(main_field)]
+    inner: im::Vector<T>,
+    size_bound: Option<NonZeroUsize>,
 }
 
-impl<T> FixedSizedInner<T> where T: Clone + Ord {
-
+impl<T> FixedSizedInner<T>
+where
+    T: Clone + Ord,
+{
     fn new(capacity: Option<NonZeroUsize>) -> Self {
         Self {
             inner: Default::default(),
-            size_bound: capacity
+            size_bound: capacity,
         }
     }
 
@@ -34,20 +37,16 @@ impl<T> FixedSizedInner<T> where T: Clone + Ord {
     }
 
     pub(crate) fn invariants_satisfied(&self) -> bool {
-        self.size_bound.map(|b| b.get() >= self.inner.len())
-            .unwrap_or(true) && self.unique_and_ordered()
+        self.size_bound.map(|b| b.get() >= self.inner.len()).unwrap_or(true) && self.unique_and_ordered()
     }
 
     fn unique_and_ordered(&self) -> bool {
-        self.inner.iter().tuple_windows().all(|(a, b)| {
-            a < b
-        })
+        self.inner.iter().tuple_windows().all(|(a, b)| a < b)
     }
 }
 
-
 pub struct OrdSet<T: Ord + Clone> {
-    inner: RwLock<FixedSizedInner<T>>
+    inner: RwLock<FixedSizedInner<T>>,
 }
 
 impl<T: Ord + Clone> Clone for OrdSet<T> {
@@ -57,25 +56,23 @@ impl<T: Ord + Clone> Clone for OrdSet<T> {
     }
 }
 
-impl<T> fmt::Display for OrdSet<T> where T: Ord + Clone + fmt::Display {
+impl<T> fmt::Display for OrdSet<T>
+where
+    T: Ord + Clone + fmt::Display,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let i = self.inner.read();
-        f.debug_set()
-            .entries(i.iter().map(ToString::to_string))
-            .finish()
+        f.debug_set().entries(i.iter().map(ToString::to_string)).finish()
     }
 }
 
 impl<T: Ord + Clone> OrdSet<T> {
     fn from_inner(i: FixedSizedInner<T>) -> Self {
-        Self {
-            inner: RwLock::new(i)
-        }
+        Self { inner: RwLock::new(i) }
     }
 }
 
 impl<T: Ord + Clone> OrdSet<T> {
-
     pub fn new(bound: Option<NonZeroUsize>) -> Self {
         Self::from_inner(FixedSizedInner::new(bound))
     }
@@ -83,10 +80,12 @@ impl<T: Ord + Clone> OrdSet<T> {
     fn insert_inner(s: &mut im::Vector<T>, v: T) -> bool {
         match s.binary_search(&v) {
             Ok(idx) => {
-                s.insert(idx, v); true
+                s.insert(idx, v);
+                true
             }
             Err(idx) => {
-                s.insert(idx, v); false
+                s.insert(idx, v);
+                false
             }
         }
     }
@@ -105,11 +104,9 @@ impl<T: Ord + Clone> OrdSet<T> {
     }
 
     /// Inserts many new elements, avoiding taking the lock each time. O(n log n)
-    pub fn insert_all(&self, i: impl Iterator<Item=T>) -> usize {
+    pub fn insert_all(&self, i: impl Iterator<Item = T>) -> usize {
         let mut wg = self.inner.write();
-        let out = i.map(|item| Self::insert_inner(&mut wg, item))
-            .filter(|b| *b)
-            .count();
+        let out = i.map(|item| Self::insert_inner(&mut wg, item)).filter(|b| *b).count();
         wg.enforce_bound();
         debug_assert!(wg.invariants_satisfied());
         out
@@ -153,18 +150,24 @@ impl<T: Ord + Clone> OrdSet<T> {
         n
     }
 
-    pub fn remove_all<I, BT>(&self, i: I) -> usize where BT: Borrow<T>, I: Iterator<Item=BT> {
+    pub fn remove_all<I, BT>(&self, i: I) -> usize
+    where
+        BT: Borrow<T>,
+        I: Iterator<Item = BT>,
+    {
         let ug = self.inner.upgradable_read();
         let mut c = im::Vector::clone(&ug);
-        let removed = i.filter_map(|item| {
-            let r = item.borrow();
-            if let Ok(i) = c.binary_search(r) {
-                c.remove(i);
-                Some(())
-            } else {
-                None
-            }
-        }).count();
+        let removed = i
+            .filter_map(|item| {
+                let r = item.borrow();
+                if let Ok(i) = c.binary_search(r) {
+                    c.remove(i);
+                    Some(())
+                } else {
+                    None
+                }
+            })
+            .count();
         if removed > 0 {
             let mut wg = RwLockUpgradableReadGuard::upgrade(ug);
             *wg.as_mut() = c;
@@ -188,11 +191,13 @@ impl<T: Ord + Clone> OrdSet<T> {
     pub fn contains(&self, v: &T) -> bool {
         self.inner.read().inner.contains(v)
     }
-
 }
 
-impl<T> FromIterator<T> for OrdSet<T> where T: Ord + Clone {
-    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+impl<T> FromIterator<T> for OrdSet<T>
+where
+    T: Ord + Clone,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let out = Self::from_inner(FixedSizedInner::new(None));
         out.insert_all(iter.into_iter());
         out

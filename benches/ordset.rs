@@ -1,19 +1,18 @@
+use criterion::{BatchSize, Criterion};
+use glimbot::util::ordset::OrdSet;
+use itertools::Itertools;
 #[cfg(target_env = "gnu")]
 use jemallocator::Jemalloc;
-use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use rand::distributions::{Uniform, WeightedIndex};
+use rayon::prelude::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use itertools::Itertools;
-use glimbot::util::ordset::OrdSet;
-use criterion::{Criterion, BatchSize};
-use rayon::prelude::*;
-use rand::distributions::{WeightedIndex, Bernoulli, Uniform};
-use once_cell::sync::Lazy;
-use rand::{Rng, thread_rng};
-use rand::distributions::uniform::UniformInt;
+
+use rand::{thread_rng, Rng};
+
 use smallvec::SmallVec;
 use std::num::NonZeroUsize;
-
 
 #[doc(hidden)]
 #[cfg(target_env = "gnu")]
@@ -30,23 +29,36 @@ trait ConcurrentOrderedSet<T: Ord + Clone + Send + Sync>: Sized + Sync {
     fn contains(&self, val: &T) -> bool;
     fn insert(&self, val: T) -> bool;
     fn remove(&self, val: &T) -> bool;
-    fn insert_all(&self, val: impl Iterator<Item=T>) -> usize;
+    fn insert_all(&self, val: impl Iterator<Item = T>) -> usize;
     fn partition(&self, val: &T) -> (Self::Inner, Self::Inner);
 
     fn do_op(&self, op: Op<T>) {
         match op {
-            Op::Insert(v) => { criterion::black_box(self.insert(v)); }
-            Op::InsertAll(vs) => { criterion::black_box(self.insert_all(vs.into_iter())); }
-            Op::Remove(v) => { criterion::black_box(self.remove(&v)); }
-            Op::Contains(v) => { criterion::black_box(self.contains(&v)); }
-            Op::Partition(v) => { criterion::black_box(self.partition(&v)); }
+            Op::Insert(v) => {
+                criterion::black_box(self.insert(v));
+            }
+            Op::InsertAll(vs) => {
+                criterion::black_box(self.insert_all(vs.into_iter()));
+            }
+            Op::Remove(v) => {
+                criterion::black_box(self.remove(&v));
+            }
+            Op::Contains(v) => {
+                criterion::black_box(self.contains(&v));
+            }
+            Op::Partition(v) => {
+                criterion::black_box(self.partition(&v));
+            }
         };
     }
 }
 
 const CAPACITY: usize = 1024;
 
-impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + Sync {
+impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T>
+where
+    T: Ord + Clone + Send + Sync,
+{
     type Inner = BTreeSet<Arc<T>>;
 
     fn contains(&self, val: &T) -> bool {
@@ -74,15 +86,11 @@ impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + S
         }
     }
 
-    fn insert_all(&self, val: impl Iterator<Item=T>) -> usize {
+    fn insert_all(&self, val: impl Iterator<Item = T>) -> usize {
         let mut wg = self.write();
-        let o = val.filter_map(|v|
-            if wg.insert(Arc::new(v)) {
-                Some(())
-            } else {
-                None
-            }
-        ).count();
+        let o = val
+            .filter_map(|v| if wg.insert(Arc::new(v)) { Some(()) } else { None })
+            .count();
         while wg.len() > CAPACITY {
             let first = wg.iter().next().unwrap().clone();
             wg.remove(&first);
@@ -97,7 +105,10 @@ impl<T> ConcurrentOrderedSet<T> for StdOrdSet<T> where T: Ord + Clone + Send + S
     }
 }
 
-impl<T> ConcurrentOrderedSet<T> for OrdSet<T> where T: Ord + Clone + Send + Sync {
+impl<T> ConcurrentOrderedSet<T> for OrdSet<T>
+where
+    T: Ord + Clone + Send + Sync,
+{
     type Inner = im::Vector<T>;
 
     fn contains(&self, val: &T) -> bool {
@@ -112,7 +123,7 @@ impl<T> ConcurrentOrderedSet<T> for OrdSet<T> where T: Ord + Clone + Send + Sync
         OrdSet::remove(self, val)
     }
 
-    fn insert_all(&self, val: impl Iterator<Item=T>) -> usize {
+    fn insert_all(&self, val: impl Iterator<Item = T>) -> usize {
         OrdSet::insert_all(self, val)
     }
 
@@ -140,23 +151,16 @@ enum OpKind {
 }
 
 impl OpKind {
-    pub fn make_op<T, I>(self, data: &mut I) -> Option<Op<T>> where I: Iterator<Item=T> {
+    pub fn make_op<T, I>(self, data: &mut I) -> Option<Op<T>>
+    where
+        I: Iterator<Item = T>,
+    {
         let out = match self {
-            OpKind::Insert => {
-                Op::Insert(data.next()?)
-            }
-            OpKind::InsertAll => {
-                Op::InsertAll(data.take(16).collect())
-            }
-            OpKind::Remove => {
-                Op::Remove(data.next()?)
-            }
-            OpKind::Contains => {
-                Op::Contains(data.next()?)
-            }
-            OpKind::Partition => {
-                Op::Partition(data.next()?)
-            }
+            OpKind::Insert => Op::Insert(data.next()?),
+            OpKind::InsertAll => Op::InsertAll(data.take(16).collect()),
+            OpKind::Remove => Op::Remove(data.next()?),
+            OpKind::Contains => Op::Contains(data.next()?),
+            OpKind::Partition => Op::Partition(data.next()?),
         };
         Some(out)
     }
@@ -169,15 +173,14 @@ struct OpGenerator {
 impl OpGenerator {
     pub fn new() -> Self {
         Self {
-weights: WeightedIndex::new(
-    &[
-        70usize, // Insert
-        2, // Insert All
-        20, // Remove
-        3, // Contains
-        20 // Partition
-    ]
-).unwrap()
+            weights: WeightedIndex::new(&[
+                70usize, // Insert
+                2,       // Insert All
+                20,      // Remove
+                3,       // Contains
+                20,      // Partition
+            ])
+            .unwrap(),
         }
     }
 
@@ -193,53 +196,47 @@ weights: WeightedIndex::new(
     }
 }
 
-fn generate_ops() -> impl Iterator<Item=Op<usize>> {
+fn generate_ops() -> impl Iterator<Item = Op<usize>> {
     let jitter = Uniform::new_inclusive(0, 5usize);
     let og = OpGenerator::new();
 
     let mut rng = thread_rng();
 
     let mut i = (0..).map(move |i| i + rng.sample(&jitter));
-    std::iter::repeat_with(move || og.select_kind())
-        .filter_map(move |k| k.make_op(&mut i))
+    std::iter::repeat_with(move || og.select_kind()).filter_map(move |k| k.make_op(&mut i))
 }
 
-fn do_ops<C, T>(m: &C, o: Vec<Op<T>>) where C: ConcurrentOrderedSet<T>, T: Ord + Clone + Send + Sync {
-    Vec::into_par_iter(o)
-        .for_each(|o: Op<_>| {
-            m.do_op(o);
-        });
+fn do_ops<C, T>(m: &C, o: Vec<Op<T>>)
+where
+    C: ConcurrentOrderedSet<T>,
+    T: Ord + Clone + Send + Sync,
+{
+    Vec::into_par_iter(o).for_each(|o: Op<_>| {
+        m.do_op(o);
+    });
 }
 
 const BATCH_SIZE: usize = 1024;
 
 fn bench_ops(c: &mut Criterion) {
     let mut o = generate_ops();
-    c.bench_function(
-        "btreeset",
-        |b| {
-            let set = StdOrdSet::default();
-            b.iter_batched(
-                || o.by_ref().take(BATCH_SIZE).collect_vec(),
-                |i| {
-                    do_ops(&set, i)
-                },
-                BatchSize::SmallInput
-            )
-        });
+    c.bench_function("btreeset", |b| {
+        let set = StdOrdSet::default();
+        b.iter_batched(
+            || o.by_ref().take(BATCH_SIZE).collect_vec(),
+            |i| do_ops(&set, i),
+            BatchSize::SmallInput,
+        )
+    });
 
-    c.bench_function(
-        "handroll",
-        |b| {
-            let m = OrdSet::new(NonZeroUsize::new(CAPACITY));
-            b.iter_batched(
-                || o.by_ref().take(BATCH_SIZE).collect_vec(),
-                |i| {
-                    do_ops(&m, i)
-                },
-                BatchSize::SmallInput
-            )
-        });
+    c.bench_function("handroll", |b| {
+        let m = OrdSet::new(NonZeroUsize::new(CAPACITY));
+        b.iter_batched(
+            || o.by_ref().take(BATCH_SIZE).collect_vec(),
+            |i| do_ops(&m, i),
+            BatchSize::SmallInput,
+        )
+    });
 }
 
 criterion_group!(ordset, bench_ops);
